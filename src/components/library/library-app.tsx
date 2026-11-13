@@ -17,6 +17,7 @@ import { useSyncExternalStore } from "react";
 import { signOut } from "@/lib/auth/client";
 import { hasGateSessionMarker } from "@/lib/auth/gate-session-marker";
 import { LIBRARY_NOTICE_KEY } from "@/components/library/auth-screen";
+import { OfficePreview, officeKind } from "@/components/library/office-preview";
 import {
   ackNotices,
   addComment,
@@ -899,7 +900,8 @@ function FilePreview({
   onBack: () => void;
   onDownload: () => void;
 }) {
-  const preview = viewer.mime.startsWith("image/") || viewer.mime === "application/pdf";
+  const office = officeKind(viewer.name, viewer.mime);
+  const preview = viewer.mime.startsWith("image/") || viewer.mime === "application/pdf" || office !== null;
   return (
     <section>
       <button type="button" className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
@@ -913,6 +915,7 @@ function FilePreview({
       {preview && viewer.mime === "application/pdf" ? (
         <iframe title={viewer.name} src={viewer.url} className="h-[78vh] w-full rounded-2xl border border-line bg-surface" />
       ) : null}
+      {office ? <OfficePreview url={viewer.url} name={viewer.name} kind={office} /> : null}
       {!preview ? <p className="text-muted">Trình duyệt không xem trực tiếp loại file này. Hãy tải về.</p> : null}
       <a
         href={viewer.url}
@@ -1386,7 +1389,13 @@ function ReviewPanel({
           {preview.section !== "practice" && preview.mime === "application/pdf" ? (
             <iframe title={preview.name} src={preview.url} className="h-[50vh] w-full rounded-2xl border border-line" />
           ) : null}
-          {preview.section !== "practice" && !preview.mime.startsWith("image/") && preview.mime !== "application/pdf" ? (
+          {preview.section !== "practice" && officeKind(preview.name, preview.mime) ? (
+            <OfficePreview url={preview.url} name={preview.name} kind={officeKind(preview.name, preview.mime)!} heightClass="h-[50vh]" />
+          ) : null}
+          {preview.section !== "practice" &&
+          !preview.mime.startsWith("image/") &&
+          preview.mime !== "application/pdf" &&
+          !officeKind(preview.name, preview.mime) ? (
             <p className="text-sm text-muted">Trình duyệt không xem trực tiếp loại file này.</p>
           ) : null}
         </div>
