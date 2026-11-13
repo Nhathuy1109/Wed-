@@ -327,7 +327,13 @@ export const recoverOwner = createServerFn({ method: "POST" })
 export const loadLibrary = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }): Promise<
-    Ok<{ me: Member; subjects: Subject[]; pendingReviews: number; mySubmissions: MySubmission[] }> | Err
+    Ok<{
+      me: Member;
+      subjects: Subject[];
+      pendingReviews: number;
+      resetRequests: number;
+      mySubmissions: MySubmission[];
+    }> | Err
   > => {
     const access = await requireMember(context.userId);
     if (!access.ok) return access;
@@ -384,7 +390,10 @@ export const loadLibrary = createServerFn({ method: "GET" })
       order by case when s.status = 'pending' then 0 else 1 end, s.created_at desc
     `;
     let pendingReviews = 0;
+    let resetRequests = 0;
     if (access.profile.role === "owner") {
+      const resets = await sql<{ n: number }>`select count(*) as n from password_requests`;
+      resetRequests = Number(resets[0]?.n ?? 0);
       const counts = await sql<{ n: number }>`
         select count(*) as n from submissions where status = 'pending'
       `;
@@ -400,7 +409,7 @@ export const loadLibrary = createServerFn({ method: "GET" })
     }));
     return {
       ok: true,
-      data: { me: memberOf(access.profile, access.legacy), subjects, pendingReviews, mySubmissions },
+      data: { me: memberOf(access.profile, access.legacy), subjects, pendingReviews, resetRequests, mySubmissions },
     };
   });
 
@@ -501,10 +510,12 @@ export const listPeople = createServerFn({ method: "GET" })
       role: "owner" | "user";
       created: string;
       blocked: boolean;
+      reset_requested: boolean;
     }>`
       select p.username, p.display_name, p.role,
              to_char(p.created_at, 'DD/MM/YYYY') as created,
-             exists(select 1 from blocks b where b.username = p.username_key) as blocked
+             exists(select 1 from blocks b where b.username = p.username_key) as blocked,
+             exists(select 1 from password_requests r where r.username_key = p.username_key) as reset_requested
       from profiles p
       order by p.created_at asc
     `;
@@ -521,6 +532,7 @@ export const listPeople = createServerFn({ method: "GET" })
       blocked: asBool(person.blocked),
       registered: true,
       role: person.role,
+      resetRequested: asBool(person.reset_requested),
     }));
     for (const extra of extras) {
       people.push({
@@ -530,6 +542,7 @@ export const listPeople = createServerFn({ method: "GET" })
         blocked: true,
         registered: false,
         role: "unknown",
+        resetRequested: false,
       });
     }
     return { ok: true, data: people };
@@ -557,6 +570,80 @@ export const setBlock = createServerFn({ method: "POST" })
     } else {
       await sql`delete from blocks where username = ${key}`;
     }
+    return { ok: true, data: null };
+  });
+
+export const requestPasswordReset = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const body = (input ?? {}) as { username?: unknown };
+    return { username: typeof body.username === "string" ? body.username : "" };
+  })
+  .handler(async ({ data }): Promise<Ok<null> | Err> => {
+    const username = normalizeUsername(data.username);
+    if (!username) return fail(usernameMessage);
+    // Luôn trả về cùng một kết quả để người lạ không dò được tên đăng nhập nào tồn tại.
+    if (isOwnerUsername(username)) return { ok: true, data: null };
+    const sql = await getSql();
+    const key = username.toLowerCase();
+    const found = await sql<{ username: string }>`
+      select username from profiles where username_key = ${key} and role = ${"user"}
+    `;
+    if (found[0]) {
+      await sql`
+        insert into password_requests (username_key, username)
+        values (${key}, ${found[0].username})
+        on conflict (username_key) do nothing
+      `;
+    }
+    return { ok: true, data: null };
+  });
+
+export const resetUserPassword = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const body = (input ?? {}) as { username?: unknown; password?: unknown };
+    return {
+      username: typeof body.username === "string" ? body.username : "",
+      password: typeof body.password === "string" ? body.password : "",
+    };
+  })
+  .handler(async ({ context, data }): Promise<Ok<null> | Err> => {
+    const access = await requireMember(context.userId);
+    if (!requireOwner(access)) return access.ok ? fail("Chỉ chủ web mới đặt lại được mật khẩu.") : access;
+    const username = normalizeUsername(data.username);
+    if (!username) return fail(usernameMessage);
+    if (isOwnerUsername(username)) return fail("Không đặt lại mật khẩu chủ web tại đây.");
+    if (data.password.length < 8 || data.password.length > 128) {
+      return fail("Mật khẩu mới cần từ 8 đến 128 ký tự.");
+    }
+    const sql = await getSql();
+    const key = username.toLowerCase();
+    const requested = await sql<{ username_key: string }>`
+      select username_key from password_requests where username_key = ${key}
+    `;
+    if (!requested[0]) return fail("Người dùng này chưa gửi yêu cầu đặt lại mật khẩu.");
+    const target = await sql<{ user_id: string }>`
+      select user_id from profiles where username_key = ${key} and role = ${"user"}
+    `;
+    const userId = target[0]?.user_id;
+    if (!userId) return fail("Không tìm thấy người dùng.");
+    const passwordHash = await hashPassword(data.password);
+    const accounts = await sql<{ id: string }>`
+      select id from account where "userId" = ${userId} and "providerId" = ${"credential"}
+    `;
+    if (accounts[0]) {
+      await sql`
+        update account set password = ${passwordHash}, "updatedAt" = now()
+        where "userId" = ${userId} and "providerId" = ${"credential"}
+      `;
+    } else {
+      await sql`
+        insert into account ("id", "accountId", "providerId", "userId", "password", "createdAt", "updatedAt")
+        values (${crypto.randomUUID()}, ${userId}, ${"credential"}, ${userId}, ${passwordHash}, now(), now())
+      `;
+    }
+    await sql`delete from "session" where "userId" = ${userId}`;
+    await sql`delete from password_requests where username_key = ${key}`;
     return { ok: true, data: null };
   });
 

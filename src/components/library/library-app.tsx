@@ -34,6 +34,7 @@ import {
   loadLibrary,
   readDocument,
   readSubmission,
+  resetUserPassword,
   reviewSubmission,
   setBlock,
   submitDocument,
@@ -110,6 +111,7 @@ export function LibraryApp() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [mySubmissions, setMySubmissions] = useState<MySubmission[]>([]);
   const [pendingReviews, setPendingReviews] = useState(0);
+  const [resetRequests, setResetRequests] = useState(0);
   const [notices, setNotices] = useState<LibraryNotice[]>(readCachedNotices);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -130,6 +132,7 @@ export function LibraryApp() {
     setSubjects(result.data.subjects);
     setMySubmissions(result.data.mySubmissions);
     setPendingReviews(result.data.pendingReviews);
+    setResetRequests(result.data.resetRequests);
   }
 
   async function reload() {
@@ -173,6 +176,7 @@ export function LibraryApp() {
         setSubjects(result.data.subjects);
         setMySubmissions(result.data.mySubmissions);
         setPendingReviews(result.data.pendingReviews);
+        setResetRequests(result.data.resetRequests);
       })
       .catch(() => {
         if (alive) setError("Không tải được thư viện.");
@@ -554,6 +558,7 @@ export function LibraryApp() {
             previewOwner={Boolean(me?.previewOwner)}
             busy={busy}
             pendingReviews={pendingReviews}
+            resetRequests={resetRequests}
             submissions={mySubmissions}
             onOpen={(id) => {
               setUsersOpen(false);
@@ -603,6 +608,7 @@ function Home({
   previewOwner,
   busy,
   pendingReviews,
+  resetRequests,
   submissions,
   onOpen,
   onUsers,
@@ -616,6 +622,7 @@ function Home({
   previewOwner: boolean;
   busy: boolean;
   pendingReviews: number;
+  resetRequests: number;
   submissions: MySubmission[];
   onOpen: (id: string) => void;
   onUsers: () => void;
@@ -666,6 +673,9 @@ function Home({
             >
               <Shield aria-hidden="true" className="size-4" />
               Người dùng
+              {resetRequests > 0 ? (
+                <span className="grid min-w-6 place-items-center rounded-full bg-pink px-1.5 text-xs">{resetRequests}</span>
+              ) : null}
             </button>
           </div>
         ) : (
@@ -1010,6 +1020,8 @@ function PeoplePanel({
 }) {
   const [people, setPeople] = useState<Person[] | null>(null);
   const [username, setUsername] = useState("");
+  const [resetFor, setResetFor] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState("");
   useEffect(() => {
     let alive = true;
     listPeople()
@@ -1068,7 +1080,7 @@ function PeoplePanel({
       </form>
       {people ? (
         <ul className="space-y-2">
-          {people.map((person) => (
+          {[...people].sort((a, b) => Number(b.resetRequested) - Number(a.resetRequested)).map((person) => (
             <li key={person.username} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-3">
               <div>
                 <p className="font-semibold">
@@ -1080,7 +1092,70 @@ function PeoplePanel({
                   {person.registered ? ` · đăng ký ${person.created}` : " · chưa đăng ký"}
                   {person.blocked ? " · đã chặn" : ""}
                 </p>
+                {person.resetRequested ? (
+                  <p className="mt-1 text-sm font-semibold text-accent">Đã yêu cầu đặt lại mật khẩu</p>
+                ) : null}
               </div>
+              {person.resetRequested && resetFor === person.username ? (
+                <form
+                  className="flex w-full flex-col gap-2 sm:flex-row"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void run(async () => {
+                      const result = await resetUserPassword({
+                        data: { username: person.username, password: newPassword },
+                      });
+                      if (!result.ok) {
+                        setNotice(result.message);
+                        return;
+                      }
+                      setNotice(`Đã đặt lại mật khẩu cho ${person.username}. Hãy báo mật khẩu mới cho họ.`);
+                      setResetFor(null);
+                      setNewPassword("");
+                      const next = await listPeople();
+                      if (next.ok) setPeople(next.data);
+                      await onChanged();
+                    });
+                  }}
+                >
+                  <input
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    placeholder="Mật khẩu mới (ít nhất 8 ký tự)"
+                    aria-label={`Mật khẩu mới cho ${person.username}`}
+                    autoComplete="off"
+                    minLength={8}
+                    required
+                    className="h-11 min-w-0 flex-1 rounded-xl border border-pink-deep bg-surface px-3"
+                  />
+                  <button type="submit" disabled={busy} className="h-11 rounded-full bg-accent px-4 text-sm font-semibold text-on-accent disabled:opacity-60">
+                    Lưu mật khẩu
+                  </button>
+                  <button
+                    type="button"
+                    className="h-11 rounded-full border border-pink-deep px-4 text-sm font-semibold"
+                    onClick={() => {
+                      setResetFor(null);
+                      setNewPassword("");
+                    }}
+                  >
+                    Hủy
+                  </button>
+                </form>
+              ) : null}
+              {person.resetRequested && resetFor !== person.username ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="h-11 rounded-full bg-accent px-4 text-sm font-semibold text-on-accent"
+                  onClick={() => {
+                    setResetFor(person.username);
+                    setNewPassword("");
+                  }}
+                >
+                  Đặt lại mật khẩu
+                </button>
+              ) : null}
               {person.role === "owner" ? null : (
                 <button
                   type="button"

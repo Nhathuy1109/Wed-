@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Eye, EyeOff } from "lucide-react";
 import { registerMember } from "@/lib/library/api";
 import { signInWithUsername } from "@/lib/library/client-auth";
 import { OWNER_USERNAME, FRESH_VISIT_KEY, NOTICE_CACHE_KEY } from "@/lib/library/ids";
@@ -15,6 +15,34 @@ function takeNotice(): string {
   } catch {
     return "";
   }
+}
+
+function PasswordField({ register }: { register: boolean }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <label className="block text-sm font-medium">
+      Mật khẩu
+      <span className="relative mt-1 block">
+        <input
+          name="password"
+          type={visible ? "text" : "password"}
+          required
+          autoComplete={register ? "new-password" : "current-password"}
+          placeholder={register ? "Ít nhất 8 ký tự" : "Mật khẩu"}
+          className="h-12 w-full rounded-xl border border-pink-deep bg-surface pl-3 pr-12 font-normal"
+        />
+        <button
+          type="button"
+          onClick={() => setVisible((v) => !v)}
+          aria-label={visible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+          aria-pressed={visible}
+          className="absolute inset-y-0 right-0 grid w-12 place-items-center text-muted"
+        >
+          {visible ? <EyeOff aria-hidden="true" className="size-5" /> : <Eye aria-hidden="true" className="size-5" />}
+        </button>
+      </span>
+    </label>
+  );
 }
 
 export function AuthScreen() {
@@ -143,17 +171,7 @@ export function AuthScreen() {
                 className="mt-1 h-12 w-full rounded-xl border border-pink-deep bg-surface px-3 font-normal"
               />
             </label>
-            <label className="block text-sm font-medium">
-              Mật khẩu
-              <input
-                name="password"
-                type="password"
-                required
-                autoComplete={register ? "new-password" : "current-password"}
-                placeholder={register ? "Ít nhất 8 ký tự" : "Mật khẩu"}
-                className="mt-1 h-12 w-full rounded-xl border border-pink-deep bg-surface px-3 font-normal"
-              />
-            </label>
+            <PasswordField register={register} />
             {message ? (
               <p role="alert" className="rounded-xl bg-danger-bg px-3 py-2 text-sm text-danger">
                 {message}

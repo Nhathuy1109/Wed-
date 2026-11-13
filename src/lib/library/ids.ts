@@ -57,6 +57,7 @@ export type Person = {
   blocked: boolean;
   registered: boolean;
   role: "owner" | "user" | "unknown";
+  resetRequested: boolean;
 };
 
 export type MySubmission = {
