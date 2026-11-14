@@ -33,6 +33,7 @@ export type FileMeta = {
   mime: string;
   bytes: number;
   created: string;
+  createdAt: number;
   section: SectionId;
 };
 
@@ -107,6 +108,57 @@ export type UserStats = {
   downloads: number;
   subjects: { name: string; downloads: number }[];
   quizzes: { subject: string; name: string; attempts: number }[];
+};
+
+export type LeaderboardRow = {
+  name: string;
+  username: string;
+  score: number;
+  total: number;
+  created: string;
+};
+
+export type LeaderboardChapter = {
+  chapter: string;
+  rows: LeaderboardRow[];
+};
+
+export type WrongQuestion = {
+  q: string;
+  o: string[];
+  a: number;
+  e: string;
+};
+
+export type HistoryItem = {
+  id: string;
+  chapter: string;
+  score: number;
+  total: number;
+  created: string;
+  wrongCount: number;
+};
+
+export type ReportItem = {
+  id: string;
+  documentName: string;
+  subjectName: string;
+  chapter: string;
+  question: string;
+  note: string;
+  author: string;
+  username: string;
+  created: string;
+};
+
+export type QuizStat = {
+  id: string;
+  name: string;
+  subjectName: string;
+  attempts: number;
+  people: number;
+  average: number;
+  chapters: { chapter: string; attempts: number; average: number }[];
 };
 
 export const FRESH_VISIT_KEY = "library-fresh-visit";

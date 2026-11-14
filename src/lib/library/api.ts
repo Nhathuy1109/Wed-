@@ -12,15 +12,20 @@ import {
   sectionById,
   type CommentItem,
   type FileMeta,
+  type HistoryItem,
+  type LeaderboardChapter,
   type LibraryNotice,
   type Member,
   type MySubmission,
   type Participant,
   type Person,
+  type QuizStat,
+  type ReportItem,
   type ReviewItem,
   type SectionId,
   type Subject,
   type UserStats,
+  type WrongQuestion,
 } from "@/lib/library/ids";
 
 type Ok<T> = { ok: true; data: T };
@@ -332,6 +337,7 @@ export const loadLibrary = createServerFn({ method: "GET" })
       subjects: Subject[];
       pendingReviews: number;
       resetRequests: number;
+      openReports: number;
       mySubmissions: MySubmission[];
     }> | Err
   > => {
@@ -349,9 +355,11 @@ export const loadLibrary = createServerFn({ method: "GET" })
       mime: string;
       bytes: number;
       created: string;
+      ts: number;
     }>`
       select id, subject_id, section, name, mime, bytes,
-             to_char(created_at, 'DD/MM/YYYY') as created
+             to_char(created_at, 'DD/MM/YYYY') as created,
+             (extract(epoch from created_at) * 1000)::float8 as ts
       from documents
       order by created_at asc
     `;
@@ -370,6 +378,7 @@ export const loadLibrary = createServerFn({ method: "GET" })
         mime: file.mime,
         bytes: Number(file.bytes) || 0,
         created: file.created,
+        createdAt: Number(file.ts) || 0,
         section: file.section,
       };
       subject.files[file.section].push(meta);
@@ -391,7 +400,10 @@ export const loadLibrary = createServerFn({ method: "GET" })
     `;
     let pendingReviews = 0;
     let resetRequests = 0;
+    let openReports = 0;
     if (access.profile.role === "owner") {
+      const reports = await sql<{ n: number }>`select count(*) as n from quiz_reports`;
+      openReports = Number(reports[0]?.n ?? 0);
       const resets = await sql<{ n: number }>`select count(*) as n from password_requests`;
       resetRequests = Number(resets[0]?.n ?? 0);
       const counts = await sql<{ n: number }>`
@@ -409,7 +421,7 @@ export const loadLibrary = createServerFn({ method: "GET" })
     }));
     return {
       ok: true,
-      data: { me: memberOf(access.profile, access.legacy), subjects, pendingReviews, resetRequests, mySubmissions },
+      data: { me: memberOf(access.profile, access.legacy), subjects, pendingReviews, resetRequests, openReports, mySubmissions },
     };
   });
 
@@ -1051,4 +1063,334 @@ export const userActivity = createServerFn({ method: "POST" })
         })),
       },
     };
+  });
+
+function cleanWrong(raw: unknown): WrongQuestion[] {
+  if (!Array.isArray(raw)) return [];
+  const out: WrongQuestion[] = [];
+  for (const item of raw.slice(0, 60)) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as { q?: unknown; o?: unknown; a?: unknown; e?: unknown };
+    if (typeof row.q !== "string" || !Array.isArray(row.o) || typeof row.a !== "number") continue;
+    const options = row.o.filter((value): value is string => typeof value === "string").slice(0, 6).map((value) => value.slice(0, 400));
+    const answer = Math.round(row.a);
+    if (options.length < 2 || answer < 0 || answer >= options.length) continue;
+    out.push({ q: row.q.slice(0, 1000), o: options, a: answer, e: typeof row.e === "string" ? row.e.slice(0, 2000) : "" });
+  }
+  while (out.length && JSON.stringify(out).length > 60000) out.pop();
+  return out;
+}
+
+export const submitScore = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const body = (input ?? {}) as {
+      documentId?: unknown;
+      chapter?: unknown;
+      score?: unknown;
+      total?: unknown;
+      wrong?: unknown;
+    };
+    return {
+      documentId: typeof body.documentId === "string" ? body.documentId : "",
+      chapter: typeof body.chapter === "string" ? body.chapter.trim().slice(0, 40) : "",
+      score: typeof body.score === "number" ? Math.round(body.score) : -1,
+      total: typeof body.total === "number" ? Math.round(body.total) : 0,
+      wrong: cleanWrong(body.wrong),
+    };
+  })
+  .handler(async ({ context, data }): Promise<Ok<null> | Err> => {
+    const access = await requireMember(context.userId);
+    if (!access.ok) return access;
+    if (!data.documentId || !data.chapter) return fail("Thiếu thông tin bài làm.");
+    if (data.total < 1 || data.total > 500 || data.score < 0 || data.score > data.total) {
+      return fail("Điểm không hợp lệ.");
+    }
+    const sql = await getSql();
+    const docs = await sql<{ section: SectionId }>`
+      select section from documents where id = ${data.documentId}
+    `;
+    if (docs[0]?.section !== "practice") return fail("Đây không phải đề thực hành.");
+    const recent = await sql<{ n: number }>`
+      select count(*) as n from quiz_scores
+      where user_id = ${access.profile.user_id}
+        and document_id = ${data.documentId}
+        and created_at > now() - interval '15 seconds'
+    `;
+    if (Number(recent[0]?.n ?? 0) > 0) return fail("Bạn vừa nộp bài, hãy đợi một chút.");
+    await sql`
+      insert into quiz_scores (id, user_id, document_id, chapter, score, total, wrong, wrong_count)
+      values (
+        ${crypto.randomUUID()}, ${access.profile.user_id}, ${data.documentId}, ${data.chapter},
+        ${data.score}, ${data.total}, ${JSON.stringify(data.wrong)}, ${data.wrong.length}
+      )
+    `;
+    return { ok: true, data: null };
+  });
+
+export const listLeaderboard = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const body = (input ?? {}) as { documentId?: unknown };
+    return { documentId: typeof body.documentId === "string" ? body.documentId : "" };
+  })
+  .handler(async ({ context, data }): Promise<Ok<LeaderboardChapter[]> | Err> => {
+    const access = await requireMember(context.userId);
+    if (!access.ok) return access;
+    if (!data.documentId) return fail("Không tìm thấy đề.");
+    const sql = await getSql();
+    // Mỗi người chỉ giữ lần làm tốt nhất của từng chương.
+    const rows = await sql<{
+      chapter: string;
+      score: number;
+      total: number;
+      created: string;
+      ts: number;
+      display_name: string;
+      username: string;
+    }>`
+      select distinct on (q.chapter, q.user_id)
+             q.chapter, q.score, q.total,
+             to_char(q.created_at, 'DD/MM/YYYY') as created,
+             extract(epoch from q.created_at)::float8 as ts,
+             p.display_name, p.username
+      from quiz_scores q
+      join profiles p on p.user_id = q.user_id
+      where q.document_id = ${data.documentId}
+      order by q.chapter, q.user_id, (q.score::float8 / q.total) desc, q.created_at asc
+    `;
+    const byChapter = new Map<string, { row: LeaderboardChapter["rows"][number]; ratio: number; ts: number }[]>();
+    for (const r of rows) {
+      const list = byChapter.get(r.chapter) ?? [];
+      list.push({
+        row: {
+          name: r.display_name,
+          username: r.username,
+          score: Number(r.score),
+          total: Number(r.total),
+          created: r.created,
+        },
+        ratio: Number(r.score) / Math.max(1, Number(r.total)),
+        ts: Number(r.ts),
+      });
+      byChapter.set(r.chapter, list);
+    }
+    const chapters: LeaderboardChapter[] = [...byChapter.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "vi", { numeric: true }))
+      .map(([chapter, list]) => ({
+        chapter,
+        rows: list
+          .sort((a, b) => b.ratio - a.ratio || a.ts - b.ts)
+          .slice(0, 10)
+          .map((item) => item.row),
+      }));
+    return { ok: true, data: chapters };
+  });
+
+export const myHistory = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const body = (input ?? {}) as { documentId?: unknown };
+    return { documentId: typeof body.documentId === "string" ? body.documentId : "" };
+  })
+  .handler(async ({ context, data }): Promise<Ok<HistoryItem[]> | Err> => {
+    const access = await requireMember(context.userId);
+    if (!access.ok) return access;
+    if (!data.documentId) return fail("Không tìm thấy đề.");
+    const sql = await getSql();
+    const rows = await sql<{
+      id: string;
+      chapter: string;
+      score: number;
+      total: number;
+      wrong_count: number;
+      created: string;
+    }>`
+      select id, chapter, score, total, wrong_count,
+             to_char(created_at, 'DD/MM HH24:MI') as created
+      from quiz_scores
+      where user_id = ${access.profile.user_id} and document_id = ${data.documentId}
+      order by created_at desc
+      limit 15
+    `;
+    return {
+      ok: true,
+      data: rows.map((row) => ({
+        id: row.id,
+        chapter: row.chapter,
+        score: Number(row.score),
+        total: Number(row.total),
+        created: row.created,
+        wrongCount: Number(row.wrong_count),
+      })),
+    };
+  });
+
+export const loadWrong = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const body = (input ?? {}) as { id?: unknown };
+    return { id: typeof body.id === "string" ? body.id : "" };
+  })
+  .handler(async ({ context, data }): Promise<Ok<WrongQuestion[]> | Err> => {
+    const access = await requireMember(context.userId);
+    if (!access.ok) return access;
+    if (!data.id) return fail("Không tìm thấy lần làm bài.");
+    const sql = await getSql();
+    const rows = await sql<{ wrong: string }>`
+      select wrong from quiz_scores
+      where id = ${data.id} and user_id = ${access.profile.user_id}
+    `;
+    if (!rows[0]) return fail("Không tìm thấy lần làm bài.");
+    let parsed: unknown = [];
+    try {
+      parsed = JSON.parse(rows[0].wrong);
+    } catch {
+      parsed = [];
+    }
+    return { ok: true, data: cleanWrong(parsed) };
+  });
+
+export const submitReport = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const body = (input ?? {}) as { documentId?: unknown; chapter?: unknown; question?: unknown; note?: unknown };
+    return {
+      documentId: typeof body.documentId === "string" ? body.documentId : "",
+      chapter: typeof body.chapter === "string" ? body.chapter.trim().slice(0, 40) : "",
+      question: typeof body.question === "string" ? body.question.trim().replace(/\s+/g, " ").slice(0, 400) : "",
+      note: typeof body.note === "string" ? body.note.trim().replace(/\s+/g, " ").slice(0, 500) : "",
+    };
+  })
+  .handler(async ({ context, data }): Promise<Ok<null> | Err> => {
+    const access = await requireMember(context.userId);
+    if (!access.ok) return access;
+    if (!data.documentId || !data.question) return fail("Thiếu thông tin câu hỏi.");
+    if (data.note.length < 3) return fail("Hãy mô tả lỗi (ví dụ: đáp án đúng phải là B).");
+    const sql = await getSql();
+    const docs = await sql<{ section: SectionId }>`select section from documents where id = ${data.documentId}`;
+    if (docs[0]?.section !== "practice") return fail("Đây không phải đề thực hành.");
+    const recent = await sql<{ n: number }>`
+      select count(*) as n from quiz_reports
+      where user_id = ${access.profile.user_id} and created_at > now() - interval '1 minute'
+    `;
+    if (Number(recent[0]?.n ?? 0) >= 3) return fail("Bạn báo lỗi hơi nhanh, hãy đợi một chút.");
+    await sql`
+      insert into quiz_reports (id, user_id, document_id, chapter, question, note)
+      values (${crypto.randomUUID()}, ${access.profile.user_id}, ${data.documentId}, ${data.chapter}, ${data.question}, ${data.note})
+    `;
+    return { ok: true, data: null };
+  });
+
+export const listReports = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }): Promise<Ok<ReportItem[]> | Err> => {
+    const access = await requireMember(context.userId);
+    if (!requireOwner(access)) return access.ok ? fail("Chỉ chủ web mới xem được mục này.") : access;
+    const sql = await getSql();
+    const rows = await sql<{
+      id: string;
+      document_name: string;
+      subject_name: string;
+      chapter: string;
+      question: string;
+      note: string;
+      display_name: string;
+      username: string;
+      created: string;
+    }>`
+      select r.id, d.name as document_name, s.name as subject_name, r.chapter, r.question, r.note,
+             p.display_name, p.username, to_char(r.created_at, 'DD/MM/YYYY HH24:MI') as created
+      from quiz_reports r
+      join documents d on d.id = r.document_id
+      join subjects s on s.id = d.subject_id
+      join profiles p on p.user_id = r.user_id
+      order by r.created_at desc
+      limit 100
+    `;
+    return {
+      ok: true,
+      data: rows.map((row) => ({
+        id: row.id,
+        documentName: row.document_name,
+        subjectName: row.subject_name,
+        chapter: row.chapter,
+        question: row.question,
+        note: row.note,
+        author: row.display_name,
+        username: row.username,
+        created: row.created,
+      })),
+    };
+  });
+
+export const resolveReport = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const body = (input ?? {}) as { id?: unknown };
+    return { id: typeof body.id === "string" ? body.id : "" };
+  })
+  .handler(async ({ context, data }): Promise<Ok<null> | Err> => {
+    const access = await requireMember(context.userId);
+    if (!requireOwner(access)) return access.ok ? fail("Chỉ chủ web mới xử lý được báo lỗi.") : access;
+    if (!data.id) return fail("Không tìm thấy báo lỗi.");
+    const sql = await getSql();
+    await sql`delete from quiz_reports where id = ${data.id}`;
+    return { ok: true, data: null };
+  });
+
+export const quizStats = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }): Promise<Ok<QuizStat[]> | Err> => {
+    const access = await requireMember(context.userId);
+    if (!requireOwner(access)) return access.ok ? fail("Chỉ chủ web mới xem được mục này.") : access;
+    const sql = await getSql();
+    const docs = await sql<{
+      id: string;
+      name: string;
+      subject_name: string;
+      attempts: number;
+      people: number;
+      avg_ratio: number;
+    }>`
+      select d.id, d.name, s.name as subject_name,
+             count(q.id) as attempts,
+             count(distinct q.user_id) as people,
+             coalesce(avg(q.score::float8 / q.total), 0)::float8 as avg_ratio
+      from documents d
+      join subjects s on s.id = d.subject_id
+      left join quiz_scores q on q.document_id = d.id
+      where d.section = 'practice'
+      group by d.id, d.name, s.name
+    `;
+    const chapters = await sql<{ document_id: string; chapter: string; attempts: number; avg_ratio: number }>`
+      select document_id, chapter, count(*) as attempts, avg(score::float8 / total)::float8 as avg_ratio
+      from quiz_scores
+      group by document_id, chapter
+    `;
+    const byDoc = new Map<string, QuizStat["chapters"]>();
+    for (const row of chapters) {
+      const list = byDoc.get(row.document_id) ?? [];
+      list.push({
+        chapter: row.chapter,
+        attempts: Number(row.attempts),
+        average: Math.round(Number(row.avg_ratio) * 100) / 10,
+      });
+      byDoc.set(row.document_id, list);
+    }
+    const stats: QuizStat[] = docs.map((row) => ({
+      id: row.id,
+      name: row.name,
+      subjectName: row.subject_name,
+      attempts: Number(row.attempts),
+      people: Number(row.people),
+      average: Math.round(Number(row.avg_ratio) * 100) / 10,
+      chapters: (byDoc.get(row.id) ?? []).sort((a, b) => a.chapter.localeCompare(b.chapter, "vi", { numeric: true })),
+    }));
+    // Đề có người làm xếp trước, điểm trung bình thấp (khó) lên đầu; đề chưa ai làm xuống cuối.
+    stats.sort((a, b) => {
+      if ((a.attempts === 0) !== (b.attempts === 0)) return a.attempts === 0 ? 1 : -1;
+      return a.average - b.average || a.name.localeCompare(b.name, "vi");
+    });
+    return { ok: true, data: stats };
   });
