@@ -12,7 +12,7 @@ import {
   Moon,
   Presentation,
   Sun,
-  User,
+  PawPrint,
   type LucideIcon,
 } from "lucide-react";
 import { fileKind, type FileKind } from "@/lib/library/ids";
@@ -26,7 +26,7 @@ const TABS: { id: TabId; label: string; icon: LucideIcon }[] = [
   { id: "home", label: "Trang chủ", icon: House },
   { id: "subjects", label: "Môn", icon: BookOpen },
   { id: "practice", label: "Ôn tập", icon: ClipboardList },
-  { id: "me", label: "Tôi", icon: User },
+  { id: "me", label: "Tôi", icon: PawPrint },
 ];
 
 export function BottomNav({

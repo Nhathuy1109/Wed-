@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { BookOpen, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { registerMember } from "@/lib/library/api";
 import { signInWithUsername } from "@/lib/library/client-auth";
 import { OWNER_USERNAME, FRESH_VISIT_KEY, NOTICE_CACHE_KEY } from "@/lib/library/ids";
@@ -96,7 +96,7 @@ export function AuthScreen() {
       <header className="border-b border-line bg-pink">
         <div className="mx-auto flex max-w-4xl items-center gap-3 px-4 py-4">
           <span className="grid size-11 place-items-center rounded-2xl bg-surface text-accent shadow-sm">
-            <BookOpen aria-hidden="true" className="size-5" />
+            <img src="/mascots/pixel-slime.svg" alt="" aria-hidden="true" className="size-9" />
           </span>
           <div>
             <p className="text-lg font-semibold leading-tight text-accent">Thư viện tài liệu</p>

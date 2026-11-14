@@ -858,15 +858,16 @@ export function LibraryApp() {
 
   return (
     <div className="min-h-screen bg-bg text-fg">
-      <header className="border-b border-line bg-pink">
-        <div className="mx-auto flex max-w-4xl flex-col gap-3 px-4 pt-3 pb-3">
+      <header className="site-header border-b border-line bg-pink">
+        <div className="mx-auto flex max-w-5xl flex-col gap-3 px-4 pt-4 pb-4 sm:flex-row sm:items-center sm:justify-between">
           <button type="button" className="flex items-center gap-3 text-left" onClick={() => selectTab("home")}>
-            <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface text-accent">
-              <BookOpen aria-hidden="true" className="size-5" />
+            <span className="brand-mark grid size-12 shrink-0 place-items-center rounded-2xl bg-surface text-accent">
+              <img aria-hidden="true" className="brand-animal" src="/mascots/pixel-night-cat.svg" alt="" />
+              <span className="brand-spark" aria-hidden="true">✦</span>
             </span>
             <span>
-              <span className="block text-lg leading-tight font-semibold text-accent">Thư viện tài liệu</span>
-              <span className="block text-sm text-muted">{me ? me.displayName : "Đang tải"}</span>
+              <span className="block text-lg leading-tight font-extrabold tracking-tight text-accent">Mochi Library <span aria-hidden="true">✿</span></span>
+              <span className="block text-xs font-medium text-muted">Góc nhỏ học tập & sáng tạo · {me ? me.displayName : "Đang tải"}</span>
             </span>
           </button>
           <label className="relative block">
@@ -886,7 +887,7 @@ export function LibraryApp() {
           </label>
         </div>
       </header>
-      <main className="has-bottom-nav mx-auto w-full max-w-4xl px-4 py-5">
+      <main className="has-bottom-nav page-shell mx-auto w-full max-w-5xl px-4 py-6 sm:py-8">
         {loading ? <SkeletonGrid items={4} /> : null}
         {error ? <p className="rounded-2xl bg-danger-bg px-4 py-3 text-sm text-danger">{error}</p> : null}
         {notice ? (
@@ -1235,7 +1236,29 @@ function HomeTab({
   }, [subjects]);
 
   return (
-    <section className="space-y-6">
+    <section className="home-dashboard space-y-7">
+      <div className="welcome-hero relative overflow-hidden rounded-[2rem] p-5 sm:p-8">
+        <span className="pixel-cloud cloud-one" aria-hidden="true">✧</span>
+        <span className="pixel-cloud cloud-two" aria-hidden="true">✦</span>
+        <div className="hero-decor" aria-hidden="true">
+          <img src="/mascots/pixel-moon.svg" alt="" />
+          <img src="/mascots/pixel-crystal.svg" alt="" />
+          <img src="/mascots/pixel-mushroom.svg" alt="" />
+        </div>
+        <div className="relative z-10 max-w-xl">
+          <span className="hero-kicker">✦ PIXEL FANTASY LIBRARY ✦</span>
+          <h1 className="mt-3 text-3xl leading-tight font-black tracking-tight sm:text-4xl">Xin chào{me ? `, ${me.displayName}` : " bạn"}! <span aria-hidden="true">✧</span></h1>
+          <p className="mt-2 max-w-md text-sm leading-6 text-muted sm:text-base">Mở cánh cổng tri thức, gom góp tài liệu và khám phá thế giới nhiệm màu cùng những linh thú pixel.</p>
+          <div className="mt-5 inline-flex items-center gap-2 rounded-lg border border-white/80 bg-white/75 px-4 py-2 text-sm font-bold text-accent shadow-sm">
+            <span aria-hidden="true">✦</span> Mỗi trang sách là một chuyến phiêu lưu!
+          </div>
+        </div>
+        <div className="hero-mascot" aria-hidden="true">
+          <img className="pixel-animal pixel-phoenix" src="/mascots/pixel-phoenix.svg" alt="" />
+          <img className="pixel-animal pixel-dragon" src="/mascots/pixel-dragon.svg" alt="" />
+          <img className="pixel-animal pixel-slime-hero" src="/mascots/pixel-slime.svg" alt="" />
+        </div>
+      </div>
       {notices.length ? (
         <div role="status" className="rounded-2xl border border-pink-deep bg-pink px-4 py-3">
           <p className="font-semibold">Thông báo</p>
@@ -1254,17 +1277,32 @@ function HomeTab({
           </button>
         </div>
       ) : null}
-      <div>
-        <h1 className="text-2xl font-semibold">Xin chào{me ? `, ${me.displayName}` : ""}</h1>
-        <p className="text-sm text-muted">Chọn môn để xem tài liệu, hoặc vào Ôn tập để làm đề.</p>
-      </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
         <StatTile value={subjects.length} label="môn học" tone="pink" />
         <StatTile value={totalDocs} label="tài liệu" tone="blue" />
         <StatTile value={totalQuizzes} label="đề thực hành" tone="pink" />
       </div>
-      <div>
-        <SectionTitle>Mới thêm</SectionTitle>
+      <section className="creature-gallery" aria-labelledby="creature-gallery-title">
+        <div className="creature-gallery-heading mb-3">
+          <div>
+            <h2 id="creature-gallery-title" className="text-lg font-extrabold tracking-tight">Linh thú đồng hành</h2>
+            <p className="text-xs text-muted">Một chút phép màu cho góc học tập</p>
+          </div>
+          <span aria-hidden="true" className="text-xl text-accent">✦</span>
+        </div>
+        <div className="creature-gallery-grid">
+          <div className="creature-card"><img src="/mascots/pixel-dragon.svg" alt="" /><strong>Rồng lam</strong><span>Can đảm & mạnh mẽ</span></div>
+          <div className="creature-card"><img src="/mascots/pixel-phoenix.svg" alt="" /><strong>Phượng hoàng</strong><span>Rực rỡ & tái sinh</span></div>
+          <div className="creature-card"><img src="/mascots/pixel-unicorn.svg" alt="" /><strong>Kỳ lân</strong><span>Ánh sao nhiệm màu</span></div>
+          <div className="creature-card"><img src="/mascots/pixel-huyen-vu.svg" alt="" /><strong>Huyền Vũ</strong><span>Bình tĩnh & bền bỉ</span></div>
+          <div className="creature-card"><img src="/mascots/pixel-lion.svg" alt="" /><strong>Sư tử nắng</strong><span>Ấm áp & kiêu hãnh</span></div>
+          <div className="creature-card"><img src="/mascots/pixel-slime.svg" alt="" /><strong>Slime</strong><span>Dẻo dai & vui nhộn</span></div>
+          <div className="creature-card"><img src="/mascots/pixel-night-cat.svg" alt="" /><strong>Mèo đêm</strong><span>Tinh nghịch & bí ẩn</span></div>
+          <div className="creature-card"><img src="/mascots/pixel-panda.svg" alt="" /><strong>Gấu trúc</strong><span>Hiền lành & chill</span></div>
+        </div>
+      </section>
+      <div className="dashboard-section">
+        <SectionTitle>Mới thêm <span aria-hidden="true">🌷</span></SectionTitle>
         {recent.length ? (
           <ul className="space-y-2">
             {recent.map(({ file, subject }) => (
@@ -1301,7 +1339,7 @@ function HomeTab({
           />
         )}
       </div>
-      <div>
+      <div className="dashboard-section">
         <SectionTitle
           action={
             <button type="button" onClick={onSeeRanking} className="inline-flex h-11 items-center gap-1 text-sm font-semibold text-accent-2">
@@ -1385,7 +1423,19 @@ function SubjectsTab({
               className={`flex min-h-24 items-center gap-3 rounded-2xl px-4 py-4 text-left ${index % 2 === 0 ? "bg-pink" : "bg-blue"}`}
             >
               <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-surface text-accent">
-                <BookOpen aria-hidden="true" className="size-6" />
+                <img
+                  aria-hidden="true"
+                  className="subject-mascot"
+                  src={[
+                    "/mascots/pixel-slime.svg",
+                    "/mascots/pixel-panda.svg",
+                    "/mascots/pixel-night-cat.svg",
+                    "/mascots/pixel-dragon.svg",
+                    "/mascots/pixel-unicorn.svg",
+                    "/mascots/pixel-lion.svg",
+                  ][index % 6]}
+                  alt=""
+                />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-lg font-semibold break-words">{item.name}</span>

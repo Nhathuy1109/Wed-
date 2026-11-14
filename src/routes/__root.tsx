@@ -16,7 +16,7 @@ export const Route = createRootRoute({
         name: "description",
         content: "Thư viện tài liệu dùng chung: đăng nhập trên mọi máy, chủ web quản lý và chặn người dùng ngay.",
       },
-      { name: "theme-color", content: "#fde4ec" },
+      { name: "theme-color", content: "#f6f3ea" },
     ],
     scripts: [{ children: THEME_INIT_SCRIPT }],
     links: [

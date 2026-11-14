@@ -10,6 +10,9 @@ npm run build
 ```
 
 ## Giao diện
+- Phong cách Pixel Fantasy trung tính: nền kem, tím khoáng, xanh ngọc và ánh vàng; hỗ trợ cả sáng/tối.
+- Bộ linh thú pixel SVG: rồng, phượng hoàng, kỳ lân, Huyền Vũ, sư tử, slime, mèo đêm và gấu trúc; có thêm pha lê, trăng và nấm trang trí.
+- Không sử dụng minh họa nhân vật dạng người; biểu tượng hồ sơ dùng dấu chân.
 - Thanh điều hướng dưới: Trang chủ / Môn / Ôn tập / Tôi.
 - Khung chờ (skeleton) khi tải, màn trống có hướng dẫn, icon theo loại file.
 - Chế độ tối: Theo máy / Sáng / Tối, chọn ở tab Tôi (lưu trên từng thiết bị).

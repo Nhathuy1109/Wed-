@@ -23,7 +23,7 @@ export function applyTheme(pref: ThemePref): void {
   const dark = pref === "dark" || (pref === "auto" && systemDark());
   document.documentElement.dataset.theme = dark ? "dark" : "light";
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", dark ? "#16131a" : "#fde4ec");
+  if (meta) meta.setAttribute("content", dark ? "#151b25" : "#f6f3ea");
 }
 
 export function setThemePref(pref: ThemePref): void {
@@ -55,4 +55,4 @@ export function useThemePref(): ThemePref {
 }
 
 /** Chạy trước khi vẽ trang để không bị chớp sáng khi mở ở chế độ tối. */
-export const THEME_INIT_SCRIPT = `(function(){try{var p=localStorage.getItem('${THEME_KEY}');var d=p==='dark'||(p!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',d?'#16131a':'#fde4ec');}catch(e){}})();`;
+export const THEME_INIT_SCRIPT = `(function(){try{var p=localStorage.getItem('${THEME_KEY}');var d=p==='dark'||(p!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',d?'#151b25':'#f6f3ea');}catch(e){}})();`;
