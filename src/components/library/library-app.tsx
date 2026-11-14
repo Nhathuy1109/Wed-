@@ -33,6 +33,7 @@ import { signOut } from "@/lib/auth/client";
 import { hasGateSessionMarker } from "@/lib/auth/gate-session-marker";
 import { LIBRARY_NOTICE_KEY } from "@/components/library/auth-screen";
 import { LeaderboardList } from "@/components/library/leaderboard";
+import { SpiritGarden } from "@/components/spirit-garden";
 import {
   Avatar,
   BottomNav,
@@ -1254,9 +1255,9 @@ function HomeTab({
           </div>
         </div>
         <div className="hero-mascot" aria-hidden="true">
-          <img className="pixel-animal pixel-phoenix" src="/mascots/pixel-phoenix.svg" alt="" />
-          <img className="pixel-animal pixel-dragon" src="/mascots/pixel-dragon.svg" alt="" />
-          <img className="pixel-animal pixel-slime-hero" src="/mascots/pixel-slime.svg" alt="" />
+          <img className="pixel-animal pixel-phoenix" src="/mascots/pixel-chu-tuoc.gif" alt="" />
+          <img className="pixel-animal pixel-dragon" src="/mascots/pixel-thanh-long.gif" alt="" />
+          <img className="pixel-animal pixel-slime-hero" src="/mascots/pixel-bach-ho.gif" alt="" />
         </div>
       </div>
       {notices.length ? (
@@ -1282,24 +1283,15 @@ function HomeTab({
         <StatTile value={totalDocs} label="tài liệu" tone="blue" />
         <StatTile value={totalQuizzes} label="đề thực hành" tone="pink" />
       </div>
-      <section className="creature-gallery" aria-labelledby="creature-gallery-title">
+      <section className="creature-gallery dashboard-section" aria-labelledby="creature-gallery-title">
         <div className="creature-gallery-heading mb-3">
           <div>
             <h2 id="creature-gallery-title" className="text-lg font-extrabold tracking-tight">Linh thú đồng hành</h2>
-            <p className="text-xs text-muted">Một chút phép màu cho góc học tập</p>
+            <p className="text-xs text-muted">Chọn linh thú — nó sẽ đi vòng trên sân. Tứ Linh đã vẽ lại + bộ pixel mới.</p>
           </div>
           <span aria-hidden="true" className="text-xl text-accent">✦</span>
         </div>
-        <div className="creature-gallery-grid">
-          <div className="creature-card"><img src="/mascots/pixel-dragon.svg" alt="" /><strong>Rồng lam</strong><span>Can đảm & mạnh mẽ</span></div>
-          <div className="creature-card"><img src="/mascots/pixel-phoenix.svg" alt="" /><strong>Phượng hoàng</strong><span>Rực rỡ & tái sinh</span></div>
-          <div className="creature-card"><img src="/mascots/pixel-unicorn.svg" alt="" /><strong>Kỳ lân</strong><span>Ánh sao nhiệm màu</span></div>
-          <div className="creature-card"><img src="/mascots/pixel-huyen-vu.svg" alt="" /><strong>Huyền Vũ</strong><span>Bình tĩnh & bền bỉ</span></div>
-          <div className="creature-card"><img src="/mascots/pixel-lion.svg" alt="" /><strong>Sư tử nắng</strong><span>Ấm áp & kiêu hãnh</span></div>
-          <div className="creature-card"><img src="/mascots/pixel-slime.svg" alt="" /><strong>Slime</strong><span>Dẻo dai & vui nhộn</span></div>
-          <div className="creature-card"><img src="/mascots/pixel-night-cat.svg" alt="" /><strong>Mèo đêm</strong><span>Tinh nghịch & bí ẩn</span></div>
-          <div className="creature-card"><img src="/mascots/pixel-panda.svg" alt="" /><strong>Gấu trúc</strong><span>Hiền lành & chill</span></div>
-        </div>
+        <SpiritGarden compact />
       </section>
       <div className="dashboard-section">
         <SectionTitle>Mới thêm <span aria-hidden="true">🌷</span></SectionTitle>
