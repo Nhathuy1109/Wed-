@@ -5,6 +5,8 @@ export type QuizQuestion = {
   question: string;
   options: QuizOption[];
   explanation: string;
+  /** false khi không tìm thấy đáp án trong tài liệu; cần người dùng xác nhận. */
+  answerKnown?: boolean;
 };
 
 export type ParseResult = {
@@ -17,15 +19,15 @@ const YELLOW_RE =
   /background(-color)?:\s*(#fff[2-9a-f]{0,3}|#ff0|#ffff00|#ffeb3b|#ffe082|#fdd835|#ffd54f|yellow|rgb\(\s*255\s*,\s*2[0-5]{2}\s*,\s*[0-9]{1,3}\s*\))/i;
 
 const ANSWER_LINE_RE =
-  /^(?:đáp\s*án|dap\s*an|answer|correct)\s*[:：.\-]?\s*([A-Da-d1-4])\b/i;
+  /^(?:[►▶✓✔☑]\s*)?(?:đáp\s*án(?:\s+đúng)?|dap\s*an(?:\s+dung)?|answer(?:\s+key)?|correct(?:\s+answer)?)\s*(?:(?:là|la)\s*)?[:：.\-]?\s*([A-Da-d1-4])(?:\b|$)/i;
 
 const EXPLAIN_RE =
-  /^(?:giải\s*thích|giai\s*thich|explain|explanation|lý\s*do|ly\s*do)\s*[:：.\-]?\s*(.*)$/i;
+  /^(?:(?:💡|🔎|📝)\s*)?(?:giải\s*thích|giai\s*thich|lời\s*giải|loi\s*giai|phân\s*tích|phan\s*tich|explain|explanation|reason|rationale|lý\s*do|ly\s*do)(?:\s+lý\s*thuyết)?\s*[:：.\-]?\s*(.*)$/i;
 
 const Q_START_RE =
-  /^(?:câu\s*(\d+)|question\s*(\d+)|(\d+)\s*[.)、]|[Qq]\s*(\d+)\s*[.)])\s*(.*)$/;
+  /^(?:câu\s*(\d+)|question\s*(\d+)|(\d+)|[Qq]\s*(\d+))\s*[:：.)、\-]?\s*(.*)$/i;
 
-const OPT_RE = /^([A-Da-d])\s*[.)、:：\-]\s*(.+)$/;
+const OPT_RE = /^(?:[（(]\s*)?([A-Da-d1-4])\s*[）)]?\s*[.)、:：\-]\s*(.+)$/;
 
 function stripTags(html: string): string {
   return html
@@ -130,6 +132,12 @@ export function parseWordQuizHtml(html: string, fileName = "Đề trắc nghiệ
         i += 1;
         continue;
       }
+      // PDF thường tự xuống dòng giữa một lựa chọn; nối phần chữ tiếp theo vào lựa chọn trước.
+      if (options.length && !Q_START_RE.test(t) && !ANSWER_LINE_RE.test(t) && !EXPLAIN_RE.test(t)) {
+        options[options.length - 1].text = `${options[options.length - 1].text} ${t}`.trim();
+        i += 1;
+        continue;
+      }
       break;
     }
 
@@ -171,22 +179,21 @@ export function parseWordQuizHtml(html: string, fileName = "Đề trắc nghiệ
       continue;
     }
 
-    let correctIdx = markedCorrect;
-    if (correctIdx < 0 && answerLetter) {
-      correctIdx = optionIndexFromLetter(answerLetter);
-    }
-    if (correctIdx < 0 || correctIdx >= options.length) {
-      warnings.push(`Câu chưa rõ đáp án đúng (mặc định A): ${questionText.slice(0, 40)}…`);
-      correctIdx = 0;
+    // Dòng đáp án tường minh được ưu tiên hơn định dạng in đậm/tô màu.
+    let correctIdx = answerLetter ? optionIndexFromLetter(answerLetter) : markedCorrect;
+    const answerKnown = correctIdx >= 0 && correctIdx < options.length;
+    if (!answerKnown) {
+      warnings.push(`Câu chưa xác định đáp án đúng — vui lòng chọn đáp án ở phần xem trước: ${questionText.slice(0, 40)}…`);
     }
     options.forEach((o, idx) => {
-      o.correct = idx === correctIdx;
+      o.correct = answerKnown && idx === correctIdx;
     });
 
     questions.push({
       question: questionText || `Câu ${questions.length + 1}`,
       options,
       explanation,
+      answerKnown,
     });
   }
 

@@ -85,7 +85,11 @@ export function WordQuizTab({ username, owner, subjects, busy, onSubmitToOwner }
         setErr(parsed.warnings.join(" ") || "Không tách được câu hỏi từ file.");
         return;
       }
-      const warnings = [...parsed.warnings];
+      const unresolvedCount = parsed.questions.filter((question) => !question.answerKnown).length;
+      const warnings = parsed.warnings.filter((warning) => !warning.startsWith("Câu chưa xác định đáp án đúng"));
+      if (unresolvedCount) {
+        warnings.push(`Có ${unresolvedCount} câu chưa nhận dạng được đáp án; hãy chọn đáp án ở phần xem trước.`);
+      }
       if (isPdf) {
         warnings.unshift(
           "PDF: đáp án tô vàng/in đậm thường mất khi trích chữ — nên ghi rõ dòng “Đáp án: B”.",
@@ -104,8 +108,30 @@ export function WordQuizTab({ username, owner, subjects, busy, onSubmitToOwner }
     }
   }
 
+  function setDraftAnswer(questionIndex: number, optionIndex: number) {
+    setDraft((current) => {
+      if (!current) return current;
+      const questions = current.questions.map((question, index) => ({
+        ...question,
+        answerKnown: index === questionIndex ? true : question.answerKnown,
+        options: question.options.map((option, oi) => ({
+          ...option,
+          correct: index === questionIndex ? oi === optionIndex : option.correct,
+        })),
+      }));
+      const unresolvedCount = questions.filter((question) => !question.answerKnown).length;
+      const warnings = current.warnings.filter((warning) => !warning.includes("câu chưa nhận dạng được đáp án"));
+      if (unresolvedCount) warnings.push(`Còn ${unresolvedCount} câu chưa nhận dạng được đáp án; hãy chọn đáp án ở phần xem trước.`);
+      return { ...current, questions, warnings };
+    });
+  }
+
   function saveDraft() {
     if (!draft) return;
+    if (draft.questions.some((question) => !question.answerKnown)) {
+      setErr("Vui lòng chọn đáp án đúng cho tất cả câu chưa xác định trước khi lưu.");
+      return;
+    }
     const quiz: PrivateQuiz = {
       id: crypto.randomUUID(),
       title: draft.title,
@@ -268,9 +294,8 @@ export function WordQuizTab({ username, owner, subjects, busy, onSubmitToOwner }
         <p className="text-sm font-semibold text-accent">Mục mới</p>
         <h1 className="mt-1 text-2xl font-bold tracking-tight">Word/PDF → Trắc nghiệm</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
-          Tải file .docx hoặc .pdf có câu hỏi A–D. Word: nhận tô vàng/in đậm/Đáp án. PDF: nên ghi rõ “Đáp án: B” (mất format vàng/đậm).
-          Giải thích (nếu có) chỉ hiện sau khi bạn chọn đáp án. Đề chỉ lưu trên máy bạn — user khác không thấy.
-          Có thể gửi chủ web để duyệt vào mục Thực hành.
+          Tải file .docx hoặc .pdf có câu hỏi và lựa chọn A–D. Hệ thống nhận diện đáp án ghi thành dòng, đáp án in đậm/tô vàng trong Word, cùng nhiều cách viết phần giải thích. Với PDF, nên ghi rõ đáp án vì định dạng tô màu/in đậm có thể bị mất. Câu chưa rõ đáp án sẽ được yêu cầu xác nhận trước khi lưu.
+          Giải thích (nếu có) chỉ hiện sau khi bạn chọn đáp án. Đề chỉ lưu trên máy bạn — user khác không thấy. Có thể gửi chủ web để duyệt vào mục Thực hành.
         </p>
       </header>
 
@@ -304,8 +329,10 @@ export function WordQuizTab({ username, owner, subjects, busy, onSubmitToOwner }
             </div>
             <button
               type="button"
-              className="inline-flex h-11 items-center gap-2 rounded-full bg-accent px-4 text-sm font-semibold text-on-accent"
+              disabled={draft.questions.some((question) => !question.answerKnown)}
+              className="inline-flex h-11 items-center gap-2 rounded-full bg-accent px-4 text-sm font-semibold text-on-accent disabled:cursor-not-allowed disabled:opacity-40"
               onClick={saveDraft}
+              title={draft.questions.some((question) => !question.answerKnown) ? "Hãy xác nhận đáp án còn thiếu" : "Lưu đề"}
             >
               <Sparkles className="size-4" aria-hidden />
               Lưu vào máy tôi
@@ -318,21 +345,29 @@ export function WordQuizTab({ username, owner, subjects, busy, onSubmitToOwner }
               ))}
             </ul>
           ) : null}
-          <ol className="mt-3 max-h-64 space-y-3 overflow-y-auto text-sm">
-            {draft.questions.slice(0, 8).map((q, i) => (
-              <li key={i}>
-                <p className="font-semibold">
-                  {i + 1}. {q.question}
-                </p>
-                <p className="text-muted">
-                  Đáp án: {String.fromCharCode(65 + q.options.findIndex((o) => o.correct))}
-                  {q.explanation ? " · có giải thích" : ""}
-                </p>
+          <p className="mt-3 text-xs text-muted">
+            Kiểm tra đáp án từng câu bên dưới. Những câu chưa được nhận dạng sẽ có nhãn “Cần chọn đáp án”.
+          </p>
+          <ol className="mt-2 max-h-[28rem] space-y-3 overflow-y-auto text-sm">
+            {draft.questions.map((q, i) => (
+              <li key={i} className="rounded-xl border border-line p-3">
+                <p className="font-semibold">{i + 1}. {q.question}</p>
+                <label className="mt-2 block text-xs font-semibold text-muted">
+                  {q.answerKnown ? "Đáp án đúng" : "Cần chọn đáp án đúng"}
+                  <select
+                    className="mt-1 h-10 w-full rounded-lg border border-line bg-bg px-2 text-sm text-ink"
+                    value={q.options.findIndex((option) => option.correct) >= 0 ? String(q.options.findIndex((option) => option.correct)) : ""}
+                    onChange={(event) => setDraftAnswer(i, Number(event.target.value))}
+                  >
+                    <option value="">— Chọn đáp án —</option>
+                    {q.options.map((option, oi) => (
+                      <option key={oi} value={oi}>{String.fromCharCode(65 + oi)}. {option.text}</option>
+                    ))}
+                  </select>
+                </label>
+                {q.explanation ? <p className="mt-1 text-xs text-muted">Có phần giải thích</p> : null}
               </li>
             ))}
-            {draft.questions.length > 8 ? (
-              <li className="text-muted">… và {draft.questions.length - 8} câu nữa</li>
-            ) : null}
           </ol>
         </div>
       ) : null}
@@ -418,8 +453,20 @@ export function WordQuizTab({ username, owner, subjects, busy, onSubmitToOwner }
         <p className="text-sm text-muted">Chưa có môn học — owner cần tạo môn trước khi gửi đề.</p>
       )}
 
+      <div className="rounded-2xl border border-line bg-surface p-3 text-sm">
+        <p className="font-semibold">File Word mẫu</p>
+        <p className="mt-1 text-xs text-muted">Tải mẫu .docx, thay nội dung câu hỏi và đáp án rồi tải lên. Có thể thêm hoặc xóa câu tùy ý.</p>
+        <a
+          href={`${import.meta.env.BASE_URL}templates/mau-trac-nghiem.docx`}
+          download="Mau-soan-trac-nghiem.docx"
+          className="mt-3 inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-semibold text-on-accent"
+        >
+          Tải file Word mẫu (.docx)
+        </a>
+      </div>
+
       <details className="rounded-2xl border border-line bg-surface p-3 text-sm">
-        <summary className="cursor-pointer font-semibold">Mẫu soạn Word</summary>
+        <summary className="cursor-pointer font-semibold">Mẫu soạn nhanh ngay trong Word</summary>
         <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs leading-relaxed text-muted">{`Câu 1. Thủ đô Việt Nam là?
 A. Hải Phòng
 B. Hà Nội
