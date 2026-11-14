@@ -33,6 +33,9 @@ import { signOut } from "@/lib/auth/client";
 import { hasGateSessionMarker } from "@/lib/auth/gate-session-marker";
 import { LIBRARY_NOTICE_KEY } from "@/components/library/auth-screen";
 import { LeaderboardList } from "@/components/library/leaderboard";
+import { SpiritGarden } from "@/components/spirit-garden";
+import { WordQuizTab } from "@/components/library/word-quiz-tab";
+import { OfficePreview, officeKind } from "@/components/library/office-preview";
 import {
   Avatar,
   BottomNav,
@@ -266,6 +269,23 @@ function readCachedNotices(): LibraryNotice[] {
   } catch {
     return [];
   }
+}
+
+
+function guessMime(file: File): string {
+  if (file.type) return file.type;
+  const n = file.name.toLowerCase();
+  if (n.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (n.endsWith(".doc")) return "application/msword";
+  if (n.endsWith(".pdf")) return "application/pdf";
+  if (n.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (n.endsWith(".xls")) return "application/vnd.ms-excel";
+  if (n.endsWith(".png")) return "image/png";
+  if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
+  if (n.endsWith(".gif")) return "image/gif";
+  if (n.endsWith(".webp")) return "image/webp";
+  if (n.endsWith(".html") || n.endsWith(".htm")) return "text/html";
+  return "application/octet-stream";
 }
 
 function readFile(file: File, asText: boolean): Promise<string> {
@@ -761,13 +781,25 @@ export function LibraryApp() {
         planScroll(null);
         return;
       }
-      const blob = await (await fetch(result.data.body)).blob();
+      const body = result.data.body;
+      // body thường là data: URL; fallback nếu server trả raw
+      const blob = body.startsWith("data:")
+        ? await (await fetch(body)).blob()
+        : new Blob([body], { type: result.data.mime || "application/octet-stream" });
+      let mime = result.data.mime || blob.type || "";
+      const lower = result.data.name.toLowerCase();
+      if ((!mime || mime === "application/octet-stream") && lower.endsWith(".docx")) {
+        mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      }
+      if ((!mime || mime === "application/octet-stream") && lower.endsWith(".pdf")) {
+        mime = "application/pdf";
+      }
       rememberScroll();
       setViewer({
         kind: "file",
         id: file.id,
         name: result.data.name,
-        mime: result.data.mime || blob.type,
+        mime,
         url: URL.createObjectURL(blob),
       });
       planScroll(null);
@@ -1068,7 +1100,7 @@ export function LibraryApp() {
                     subjectId: subject.id,
                     section,
                     name: file.name,
-                    mime: file.type || (asText ? "text/html" : "application/octet-stream"),
+                    mime: asText ? "text/html" : guessMime(file),
                     body,
                     bytes: file.size,
                   },
@@ -1101,6 +1133,34 @@ export function LibraryApp() {
                 openSubject(result.data.id);
               })
             }
+          />
+        ) : null}
+        {idle && tab === "wordquiz" && me ? (
+          <WordQuizTab
+            username={me.username}
+            owner={Boolean(owner)}
+            subjects={subjects}
+            busy={busy}
+            onSubmitToOwner={({ subjectId, name, body, bytes }) => {
+              run(async () => {
+                const result = await submitDocument({
+                  data: {
+                    subjectId,
+                    section: "practice",
+                    name,
+                    mime: "text/html",
+                    body,
+                    bytes,
+                  },
+                });
+                if (!result.ok) {
+                  setNotice(result.message);
+                  return;
+                }
+                setNotice("Đã gửi đề cho chủ web duyệt (Thực hành).");
+                await reload();
+              });
+            }}
           />
         ) : null}
         {idle && tab === "practice" ? (
@@ -1254,9 +1314,9 @@ function HomeTab({
           </div>
         </div>
         <div className="hero-mascot" aria-hidden="true">
-          <img className="pixel-animal pixel-phoenix" src="/mascots/pixel-phoenix.svg" alt="" />
-          <img className="pixel-animal pixel-dragon" src="/mascots/pixel-dragon.svg" alt="" />
-          <img className="pixel-animal pixel-slime-hero" src="/mascots/pixel-slime.svg" alt="" />
+          <img className="pixel-animal pixel-phoenix" src="/mascots/pixel-chu-tuoc.gif" alt="" />
+          <img className="pixel-animal pixel-dragon" src="/mascots/pixel-thanh-long.gif" alt="" />
+          <img className="pixel-animal pixel-slime-hero" src="/mascots/pixel-bach-ho.gif" alt="" />
         </div>
       </div>
       {notices.length ? (
@@ -1282,24 +1342,15 @@ function HomeTab({
         <StatTile value={totalDocs} label="tài liệu" tone="blue" />
         <StatTile value={totalQuizzes} label="đề thực hành" tone="pink" />
       </div>
-      <section className="creature-gallery" aria-labelledby="creature-gallery-title">
+      <section className="creature-gallery dashboard-section" aria-labelledby="creature-gallery-title">
         <div className="creature-gallery-heading mb-3">
           <div>
             <h2 id="creature-gallery-title" className="text-lg font-extrabold tracking-tight">Linh thú đồng hành</h2>
-            <p className="text-xs text-muted">Một chút phép màu cho góc học tập</p>
+            <p className="text-xs text-muted">Chọn linh thú — nó sẽ đi vòng trên sân. Tứ Linh đã vẽ lại + bộ pixel mới.</p>
           </div>
           <span aria-hidden="true" className="text-xl text-accent">✦</span>
         </div>
-        <div className="creature-gallery-grid">
-          <div className="creature-card"><img src="/mascots/pixel-dragon.svg" alt="" /><strong>Rồng lam</strong><span>Can đảm & mạnh mẽ</span></div>
-          <div className="creature-card"><img src="/mascots/pixel-phoenix.svg" alt="" /><strong>Phượng hoàng</strong><span>Rực rỡ & tái sinh</span></div>
-          <div className="creature-card"><img src="/mascots/pixel-unicorn.svg" alt="" /><strong>Kỳ lân</strong><span>Ánh sao nhiệm màu</span></div>
-          <div className="creature-card"><img src="/mascots/pixel-huyen-vu.svg" alt="" /><strong>Huyền Vũ</strong><span>Bình tĩnh & bền bỉ</span></div>
-          <div className="creature-card"><img src="/mascots/pixel-lion.svg" alt="" /><strong>Sư tử nắng</strong><span>Ấm áp & kiêu hãnh</span></div>
-          <div className="creature-card"><img src="/mascots/pixel-slime.svg" alt="" /><strong>Slime</strong><span>Dẻo dai & vui nhộn</span></div>
-          <div className="creature-card"><img src="/mascots/pixel-night-cat.svg" alt="" /><strong>Mèo đêm</strong><span>Tinh nghịch & bí ẩn</span></div>
-          <div className="creature-card"><img src="/mascots/pixel-panda.svg" alt="" /><strong>Gấu trúc</strong><span>Hiền lành & chill</span></div>
-        </div>
+        <SpiritGarden compact />
       </section>
       <div className="dashboard-section">
         <SectionTitle>Mới thêm <span aria-hidden="true">🌷</span></SectionTitle>
@@ -2078,7 +2129,10 @@ function FilePreview({
   onBack: () => void;
   onDownload: () => void;
 }) {
-  const preview = viewer.mime.startsWith("image/") || viewer.mime === "application/pdf";
+  const office = officeKind(viewer.name, viewer.mime);
+  const isImage = viewer.mime.startsWith("image/");
+  const isPdf = viewer.mime === "application/pdf" || viewer.name.toLowerCase().endsWith(".pdf");
+  const canInline = isImage || isPdf || Boolean(office);
   return (
     <section>
       <button type="button" className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
@@ -2086,13 +2140,16 @@ function FilePreview({
         Quay lại
       </button>
       <h1 className="mb-3 text-2xl font-semibold break-words">{viewer.name}</h1>
-      {preview && viewer.mime.startsWith("image/") ? (
+      {isImage ? (
         <img src={viewer.url} alt="" className="max-h-[70vh] w-full rounded-2xl border border-line object-contain bg-surface" />
       ) : null}
-      {preview && viewer.mime === "application/pdf" ? (
+      {isPdf ? (
         <iframe title={viewer.name} src={viewer.url} className="h-[78vh] w-full rounded-2xl border border-line bg-white" />
       ) : null}
-      {!preview ? (
+      {office ? (
+        <OfficePreview url={viewer.url} name={viewer.name} kind={office} />
+      ) : null}
+      {!canInline ? (
         <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-4">
           <FileIcon name={viewer.name} mime={viewer.mime} className="size-14" />
           <p className="text-pretty text-muted">Trình duyệt không xem trực tiếp loại file này. Hãy tải về để mở.</p>
@@ -2528,7 +2585,7 @@ function SharePanel({
                   subjectId,
                   section,
                   name: file.name,
-                  mime: file.type || (asText ? "text/html" : "application/octet-stream"),
+                  mime: asText ? "text/html" : guessMime(file),
                   body,
                   bytes: file.size,
                 });

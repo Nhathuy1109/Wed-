@@ -58,10 +58,17 @@ export function OfficePreview({
     setActive(0);
 
     async function load() {
-      const buffer = await (await fetch(url)).arrayBuffer();
+      try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Không tải được file (HTTP " + res.status + ").");
+      const buffer = await res.arrayBuffer();
+      if (!buffer.byteLength) throw new Error("File trống hoặc không đọc được nội dung.");
       if (kind === "docx") {
         const mammoth = (await import("mammoth/mammoth.browser")).default;
         const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
+        if (!result.value || !String(result.value).trim()) {
+          throw new Error("File Word không có nội dung văn bản (có thể chỉ có ảnh/scan).");
+        }
         if (alive) setState({ status: "docx", html: result.value });
         return;
       }
@@ -79,11 +86,13 @@ export function OfficePreview({
         return { name: sheetName, rows, truncated };
       });
       if (alive) setState({ status: "xlsx", sheets });
+      } catch (err) {
+        const msg = err instanceof Error && err.message ? err.message : "Không đọc được file này. Hãy tải về để mở bằng Word/Excel.";
+        if (alive) setState({ status: "error", message: msg });
+      }
     }
 
-    load().catch(() => {
-      if (alive) setState({ status: "error", message: "Không đọc được file này. Hãy tải về để mở bằng Word/Excel." });
-    });
+    void load();
     return () => {
       alive = false;
     };

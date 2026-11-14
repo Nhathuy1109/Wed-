@@ -7,6 +7,7 @@ import {
   FileImage,
   FileSpreadsheet,
   FileText,
+  FilePenLine,
   House,
   Monitor,
   Moon,
@@ -18,14 +19,16 @@ import {
 import { fileKind, type FileKind } from "@/lib/library/ids";
 import { setThemePref, useThemePref, type ThemePref } from "@/lib/theme";
 
+
 /* ---------- Thanh điều hướng dưới ---------- */
 
-export type TabId = "home" | "subjects" | "practice" | "me";
+export type TabId = "home" | "subjects" | "practice" | "wordquiz" | "me";
 
 const TABS: { id: TabId; label: string; icon: LucideIcon }[] = [
   { id: "home", label: "Trang chủ", icon: House },
   { id: "subjects", label: "Môn", icon: BookOpen },
   { id: "practice", label: "Ôn tập", icon: ClipboardList },
+  { id: "wordquiz", label: "Word→TN", icon: FilePenLine },
   { id: "me", label: "Tôi", icon: PawPrint },
 ];
 
@@ -292,3 +295,11 @@ export function Avatar({ name, className = "size-12 text-lg" }: { name: string; 
     </span>
   );
 }
+
+import { fileKind, type FileKind } from "@/lib/library/ids";
+import { setThemePref, useThemePref, type ThemePref } from "@/lib/theme";
+
+/* ---------- Thanh điều hướng dưới ---------- */
+
+
+/* ---------- Khung chờ ---------- */
