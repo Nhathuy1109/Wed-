@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import {
   ArrowLeft,
   BookOpen,
@@ -8,14 +17,17 @@ import {
   Download,
   FolderOpen,
   LogOut,
+  Pencil,
   Plus,
   Search,
   SearchX,
   Share2,
   Shield,
+  Star,
   Trash2,
   Upload,
   Users,
+  X,
 } from "lucide-react";
 import { signOut } from "@/lib/auth/client";
 import { hasGateSessionMarker } from "@/lib/auth/gate-session-marker";
@@ -54,17 +66,23 @@ import {
   readSubmission,
   resetUserPassword,
   reviewSubmission,
+  saveQuizResult,
   setAnonymous,
   setBlock,
+  setFavorite as saveFavorite,
+  setNickname,
   submitDocument,
   trackUse,
+  updateDocument,
   userActivity,
 } from "@/lib/library/api";
 import {
   FRESH_VISIT_KEY,
   fileKind,
+  foldText,
   formatBytes,
   MAX_FILE_BYTES,
+  NICKNAME_MAX,
   NOTICE_CACHE_KEY,
   SECTIONS,
   sectionById,
@@ -76,6 +94,7 @@ import {
   type MyStats,
   type Participant,
   type Person,
+  type QuizSaved,
   type ReviewItem,
   type SectionId,
   type Subject,
@@ -83,6 +102,8 @@ import {
 } from "@/lib/library/ids";
 
 const subscribeNone = () => () => {};
+
+const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 function useGateSession(): boolean {
   return useSyncExternalStore(subscribeNone, hasGateSessionMarker, () => false);
@@ -95,6 +116,127 @@ type Viewer =
 type Panel = "users" | "share" | "review" | "info";
 
 type SearchHit = { key: string; title: string; meta: string; icon: ReactNode; open: () => void };
+
+const KIND_FILTERS = [
+  ["all", "Mọi loại"],
+  ["pdf", "PDF"],
+  ["word", "Word"],
+  ["sheet", "Bảng tính"],
+  ["slides", "Slide"],
+  ["image", "Ảnh"],
+  ["other", "Khác"],
+] as const;
+
+type KindFilter = (typeof KIND_FILTERS)[number][0];
+
+type SearchFilters = { subject: string; section: SectionId | "all"; kind: KindFilter };
+
+const NO_FILTERS: SearchFilters = { subject: "", section: "all", kind: "all" };
+
+type FavoriteItem = { file: FileMeta; subject: Subject };
+
+type SortMode = "newest" | "oldest" | "name" | "size" | "favorite";
+
+const SORT_OPTIONS: [SortMode, string][] = [
+  ["newest", "Mới nhất"],
+  ["oldest", "Cũ nhất"],
+  ["name", "Tên A → Z"],
+  ["size", "Dung lượng lớn"],
+  ["favorite", "Đã lưu trước"],
+];
+
+const RECENT_KEY = "library-recent-searches";
+const SORT_KEY = "library-sort";
+const SEEN_PREFIX = "library-seen-docs:";
+
+function kindGroup(file: FileMeta): KindFilter {
+  const kind = fileKind(file.name, file.mime, file.section);
+  return kind === "pdf" || kind === "word" || kind === "sheet" || kind === "slides" || kind === "image" ? kind : "other";
+}
+
+function readRecentSearches(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]") as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string").slice(0, 6) : [];
+  } catch {
+    return [];
+  }
+}
+
+function readSortMode(): SortMode {
+  try {
+    const value = localStorage.getItem(SORT_KEY);
+    return SORT_OPTIONS.some(([id]) => id === value) ? (value as SortMode) : "newest";
+  } catch {
+    return "newest";
+  }
+}
+
+function readSeen(username: string): string[] | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(`${SEEN_PREFIX}${username.toLowerCase()}`) ?? "null") as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Đề HTML báo điểm về trang cha bằng postMessage. Chấp nhận vài dạng tên thông điệp. */
+function parseQuizMessage(data: unknown): { score: number; total: number } | null {
+  if (!data || typeof data !== "object") return null;
+  const msg = data as { type?: unknown; source?: unknown; score?: unknown; total?: unknown; max?: unknown };
+  const kind = typeof msg.type === "string" ? msg.type : "";
+  if (!["result", "quiz-result", "quizResult", "quiz_result", "library-quiz-result"].includes(kind)) return null;
+  if (kind === "result" && msg.source !== "library-quiz") return null;
+  const score = Number(msg.score);
+  const total = Number(msg.total ?? msg.max);
+  if (!Number.isFinite(score) || !Number.isFinite(total) || total < 1 || score < 0 || score > total) return null;
+  return { score, total };
+}
+
+/**
+ * Script chèn vào đề HTML: cung cấp hàm reportQuizResult(score, total) và tự nhận
+ * màn kết quả dạng "Kết quả: 8/10" khi trang đề không tự gọi hàm báo điểm.
+ */
+const QUIZ_BRIDGE = String.raw`(function(){
+if(window.__libraryQuizBridge)return;window.__libraryQuizBridge=true;
+function send(score,total){try{parent.postMessage({source:"library-quiz",type:"result",score:Number(score),total:Number(total)},"*");}catch(e){}}
+window.libraryReportResult=send;window.reportQuizResult=send;window.submitQuizResult=send;
+var STRONG=/(kết quả|ket qua|tổng kết|tong ket|hoàn thành|hoan thanh|điểm của bạn|diem cua ban|bạn đạt|ban dat|bạn đã đúng|bạn đúng|bạn làm đúng|final score|your score|result|finished)/i;
+var RATIO=/(\d{1,4})\s*\/\s*(\d{1,4})/g;
+var last="",timer=null;
+function find(lines){
+  for(var i=0;i<lines.length;i++){
+    if(!STRONG.test(lines[i]))continue;
+    var chunk=lines.slice(i,i+4).join(" ");
+    var m;RATIO.lastIndex=0;
+    while((m=RATIO.exec(chunk))){
+      var a=+m[1],b=+m[2];
+      var pre=chunk.slice(Math.max(0,m.index-7),m.index).toLowerCase();
+      if(/(câu|cau|question|q\.?)\s*$/.test(pre))continue;
+      if(b>=1&&a<=b)return[a,b];
+    }
+  }
+  return null;
+}
+function scan(){
+  timer=null;
+  var text=(document.body&&document.body.innerText)||"";
+  var found=find(text.split(/\n+/));
+  if(!found){last="";return;}
+  var id=found[0]+"/"+found[1];
+  if(id!==last){last=id;send(found[0],found[1]);}
+}
+function queue(){if(timer)clearTimeout(timer);timer=setTimeout(scan,1200);}
+try{new MutationObserver(queue).observe(document.documentElement,{childList:true,subtree:true,characterData:true,attributes:true});}catch(e){}
+queue();
+})();`;
+
+function withQuizBridge(html: string): string {
+  const tag = `<script>${QUIZ_BRIDGE}</script>`;
+  const end = html.lastIndexOf("</body>");
+  return end === -1 ? html + tag : html.slice(0, end) + tag + html.slice(end);
+}
 
 function countFiles(subject: Subject): number {
   return subject.files.theory.length + subject.files.quizfile.length + subject.files.practice.length;
@@ -156,6 +298,20 @@ export function LibraryApp() {
   const [viewer, setViewer] = useState<Viewer | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [bests, setBests] = useState<Record<string, number>>({});
+  const [quizResult, setQuizResult] = useState<QuizSaved | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filters, setFilters] = useState<SearchFilters>(NO_FILTERS);
+  const [recent, setRecent] = useState<string[]>(readRecentSearches);
+  const [seen, setSeen] = useState<Set<string> | null>(null);
+  const [freshIds, setFreshIds] = useState<Set<string>>(() => new Set());
+  const scrollMemory = useRef(new Map<string, number>());
+  const tabMemory = useRef<Partial<Record<TabId, { subjectId: string | null; panel: Panel | null }>>>({});
+  const pendingScroll = useRef<number | null>(null);
+  const lastReload = useRef(0);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const backRef = useRef<() => boolean>(() => false);
 
   function remember(result: Awaited<ReturnType<typeof loadLibrary>>) {
     if (!result.ok) return;
@@ -164,6 +320,9 @@ export function LibraryApp() {
     setMySubmissions(result.data.mySubmissions);
     setPendingReviews(result.data.pendingReviews);
     setResetRequests(result.data.resetRequests);
+    setFavorites(result.data.favorites);
+    setBests(result.data.bests);
+    lastReload.current = Date.now();
   }
 
   async function reload() {
@@ -248,46 +407,297 @@ export function LibraryApp() {
     if (typeof window !== "undefined") window.scrollTo({ top: 0 });
   }
 
-  /** Chạm vào tab: về màn gốc của tab đó (đóng môn, đề đang mở, bảng quản lý). */
-  function selectTab(next: TabId) {
-    setTab(next);
-    setPanel(null);
-    setViewer(null);
+  /** Khóa nhận diện màn đang xem, dùng để nhớ vị trí cuộn của từng màn. */
+  function viewKey(t: TabId = tab, s: string | null = subjectId, p: Panel | null = panel, v: string = viewer?.id ?? ""): string {
+    return `${t}|${s ?? ""}|${p ?? ""}|${v}`;
+  }
+
+  function rememberScroll() {
+    if (typeof window !== "undefined") scrollMemory.current.set(viewKey(), window.scrollY);
+  }
+
+  /** Lên lịch cuộn sau lần hiển thị tới: về vị trí đã nhớ của màn đó, hoặc lên đầu. */
+  function planScroll(key: string | null) {
+    pendingScroll.current = key ? (scrollMemory.current.get(key) ?? 0) : 0;
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => {
+        pendingScroll.current = null;
+      }, 250);
+    }
+  }
+
+  useIsoLayoutEffect(() => {
+    if (pendingScroll.current === null) return;
+    const top = pendingScroll.current;
+    pendingScroll.current = null;
+    window.scrollTo({ top });
+  });
+
+  function resetSearch() {
     setQuery("");
+    setSearchOpen(false);
+  }
+
+  function openSearch() {
+    if (searchOpen) return;
+    rememberScroll();
+    setSearchOpen(true);
+    planScroll(null);
+  }
+
+  function leaveSearch() {
+    resetSearch();
+    planScroll(viewKey());
+  }
+
+  function rememberSearch(term: string) {
+    const clean = term.trim();
+    if (clean.length < 2) return;
+    setRecent((list) => {
+      const next = [clean, ...list.filter((item) => foldText(item) !== foldText(clean))].slice(0, 6);
+      try {
+        localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
+
+  function clearRecent() {
+    setRecent([]);
+    try {
+      localStorage.removeItem(RECENT_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function markSeen(ids: string[]) {
+    setSeen((current) => {
+      if (!current) return current;
+      const missing = ids.filter((id) => !current.has(id));
+      return missing.length ? new Set([...current, ...missing]) : current;
+    });
+  }
+
+  /**
+   * Chạm vào tab: sang tab khác thì giữ lại màn và vị trí cuộn lần trước của tab đó;
+   * chạm lại tab đang mở thì về màn gốc của tab (đóng môn, đề đang mở, bảng quản lý).
+   */
+  function selectTab(next: TabId) {
     setNotice("");
-    setSubjectId(null);
-    scrollTop();
+    if (next === tab) {
+      resetSearch();
+      setPanel(null);
+      setViewer(null);
+      setSubjectId(null);
+      planScroll(null);
+      scrollTop();
+      return;
+    }
+    rememberScroll();
+    tabMemory.current[tab] = { subjectId, panel };
+    const saved = tabMemory.current[next] ?? { subjectId: null, panel: null };
+    const nextSubject = saved.subjectId && subjects.some((item) => item.id === saved.subjectId) ? saved.subjectId : null;
+    resetSearch();
+    setViewer(null);
+    setTab(next);
+    setSubjectId(nextSubject);
+    setPanel(saved.panel);
+    planScroll(viewKey(next, nextSubject, saved.panel, ""));
   }
 
   function openSubject(id: string, nextSection?: SectionId) {
+    rememberScroll();
+    const target = subjects.find((item) => item.id === id);
+    if (target && seen) {
+      const ids = SECTIONS.flatMap((group) => target.files[group.id].map((file) => file.id));
+      setFreshIds(new Set(ids.filter((docId) => !seen.has(docId))));
+      markSeen(ids);
+    } else {
+      setFreshIds(new Set());
+    }
     setTab("subjects");
     setPanel(null);
     setViewer(null);
-    setQuery("");
+    resetSearch();
     setSubjectId(id);
     if (nextSection) setSection(nextSection);
-    scrollTop();
+    planScroll(null);
   }
 
   function openPanel(next: Panel) {
+    rememberScroll();
     setTab("me");
     setViewer(null);
-    setQuery("");
+    resetSearch();
     setSubjectId(null);
     setPanel(next);
     if (next === "share") void reload();
-    scrollTop();
+    planScroll(null);
   }
+
+  /** Quay lại một bước (nút Quay lại và cử chỉ vuốt). Trả về false nếu đang ở màn gốc. */
+  function goBack(): boolean {
+    if (searchOpen || query.trim()) {
+      leaveSearch();
+      return true;
+    }
+    if (viewer) {
+      setViewer(null);
+      planScroll(viewKey(tab, subjectId, panel, ""));
+      return true;
+    }
+    if (panel) {
+      setPanel(null);
+      planScroll(viewKey(tab, subjectId, null, ""));
+      return true;
+    }
+    if (tab === "subjects" && subjectId) {
+      setSubjectId(null);
+      planScroll(viewKey(tab, null, null, ""));
+      return true;
+    }
+    return false;
+  }
+
+  useEffect(() => {
+    backRef.current = goBack;
+  });
+
+  // Vuốt từ trái sang phải để quay lại.
+  useEffect(() => {
+    let startX = 0;
+    let startY = 0;
+    let startAt = 0;
+    let active = false;
+    function onStart(event: TouchEvent) {
+      const touch = event.touches[0];
+      const target = event.target as HTMLElement | null;
+      if (!touch || event.touches.length > 1 || target?.closest("input, textarea, select, [data-no-swipe]")) {
+        active = false;
+        return;
+      }
+      active = touch.clientX < window.innerWidth * 0.4;
+      startX = touch.clientX;
+      startY = touch.clientY;
+      startAt = Date.now();
+    }
+    function onEnd(event: TouchEvent) {
+      if (!active) return;
+      active = false;
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+      const dx = touch.clientX - startX;
+      const dy = Math.abs(touch.clientY - startY);
+      if (dx > 80 && dy < dx * 0.5 && Date.now() - startAt < 700) backRef.current();
+    }
+    window.addEventListener("touchstart", onStart, { passive: true });
+    window.addEventListener("touchend", onEnd, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onStart);
+      window.removeEventListener("touchend", onEnd);
+    };
+  }, []);
 
   const subject = subjects.find((item) => item.id === subjectId) ?? null;
   const owner = me?.role === "owner";
+  const searching = searchOpen || query.trim().length > 0;
+  const filtersActive = filters.subject !== "" || filters.section !== "all" || filters.kind !== "all";
 
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return [];
-    const hits: SearchHit[] = [];
+  const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
+  const favoriteItems = useMemo(() => {
+    const index = new Map<string, FavoriteItem>();
     for (const item of subjects) {
-      if (item.name.toLowerCase().includes(needle)) {
+      for (const group of SECTIONS) {
+        for (const file of item.files[group.id]) index.set(file.id, { file, subject: item });
+      }
+    }
+    return favorites.map((id) => index.get(id)).filter((item): item is FavoriteItem => Boolean(item));
+  }, [favorites, subjects]);
+
+  // Tài liệu mới: so với danh sách đã thấy trên máy này.
+  const newBySubject = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!seen) return map;
+    for (const item of subjects) {
+      let count = 0;
+      for (const group of SECTIONS) {
+        for (const file of item.files[group.id]) if (!seen.has(file.id)) count += 1;
+      }
+      if (count) map.set(item.id, count);
+    }
+    return map;
+  }, [subjects, seen]);
+  const newTotal = useMemo(() => [...newBySubject.values()].reduce((sum, n) => sum + n, 0), [newBySubject]);
+
+  useEffect(() => {
+    if (!me || loading || seen) return;
+    const stored = readSeen(me.username);
+    const all = subjects.flatMap((item) => SECTIONS.flatMap((group) => item.files[group.id].map((file) => file.id)));
+    // Lần đầu trên máy này: coi mọi tài liệu hiện có là đã thấy, chỉ báo cho tài liệu thêm sau đó.
+    setSeen(new Set(stored ?? all));
+  }, [me, loading, seen, subjects]);
+
+  useEffect(() => {
+    if (!me || !seen) return;
+    try {
+      localStorage.setItem(`${SEEN_PREFIX}${me.username.toLowerCase()}`, JSON.stringify([...seen]));
+    } catch {
+      /* ignore */
+    }
+  }, [me, seen]);
+
+  useEffect(() => {
+    if (!owner || !seen) return;
+    markSeen(subjects.flatMap((item) => SECTIONS.flatMap((group) => item.files[group.id].map((file) => file.id))));
+  }, [owner, seen, subjects]);
+
+  // Quay lại ứng dụng sau một lúc: tải lại để thấy tài liệu mới.
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastReload.current < 30_000) return;
+      void reload().catch(() => undefined);
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Nhận điểm do đề HTML gửi về và lưu lại.
+  const practiceId = viewer?.kind === "practice" ? viewer.id : null;
+  useEffect(() => {
+    if (!practiceId) return;
+    function onMessage(event: MessageEvent) {
+      if (event.source !== frameRef.current?.contentWindow) return;
+      const result = parseQuizMessage(event.data);
+      if (!result) return;
+      void saveQuizResult({ data: { documentId: practiceId as string, score: result.score, total: result.total } })
+        .then((saved) => {
+          if (!saved.ok) {
+            setNotice(saved.message);
+            return;
+          }
+          setQuizResult(saved.data);
+          if (saved.data.saved) {
+            setBests((current) => ({ ...current, [practiceId as string]: saved.data.best }));
+            setRankVersion((value) => value + 1);
+          }
+        })
+        .catch(() => setNotice("Không lưu được kết quả. Thử làm lại."));
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [practiceId]);
+
+  const hits: SearchHit[] = [];
+  const needle = foldText(query.trim());
+  if (searching && (needle || filtersActive)) {
+    for (const item of subjects) {
+      if (filters.subject && item.id !== filters.subject) continue;
+      if (needle && !filtersActive && foldText(item.name).includes(needle)) {
         hits.push({
           key: `s-${item.id}`,
           title: item.name,
@@ -297,25 +707,31 @@ export function LibraryApp() {
               <BookOpen aria-hidden="true" className="size-5" />
             </span>
           ),
-          open: () => openSubject(item.id),
+          open: () => {
+            rememberSearch(query);
+            openSubject(item.id);
+          },
         });
       }
       for (const group of SECTIONS) {
+        if (filters.section !== "all" && filters.section !== group.id) continue;
         for (const file of item.files[group.id]) {
-          if (!file.name.toLowerCase().includes(needle)) continue;
+          if (filters.kind !== "all" && kindGroup(file) !== filters.kind) continue;
+          if (needle && !foldText(file.name).includes(needle)) continue;
           hits.push({
             key: file.id,
             title: file.name,
             meta: `${item.name} · ${group.label}`,
             icon: <FileIcon name={file.name} mime={file.mime} section={file.section} />,
-            open: () => openSubject(item.id, group.id),
+            open: () => {
+              rememberSearch(query);
+              openSubject(item.id, group.id);
+            },
           });
         }
       }
     }
-    return hits;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, subjects]);
+  }
 
   async function run(action: () => Promise<void>) {
     if (busy) return;
@@ -338,12 +754,15 @@ export function LibraryApp() {
         return;
       }
       if (result.data.section === "practice") {
+        rememberScroll();
+        setQuizResult(null);
         setViewer({ kind: "practice", id: file.id, name: result.data.name, html: result.data.body });
         void trackUse({ data: { id: file.id, kind: "attempt" } });
-        scrollTop();
+        planScroll(null);
         return;
       }
       const blob = await (await fetch(result.data.body)).blob();
+      rememberScroll();
       setViewer({
         kind: "file",
         id: file.id,
@@ -351,7 +770,7 @@ export function LibraryApp() {
         mime: result.data.mime || blob.type,
         url: URL.createObjectURL(blob),
       });
-      scrollTop();
+      planScroll(null);
     });
   }
 
@@ -391,8 +810,51 @@ export function LibraryApp() {
     });
   }
 
-  const idle = !loading && !error && !query.trim() && !panel && !viewer;
+  function toggleFavorite(file: FileMeta) {
+    const on = !favorites.includes(file.id);
+    setFavorites((list) => (on ? [file.id, ...list.filter((id) => id !== file.id)] : list.filter((id) => id !== file.id)));
+    void saveFavorite({ data: { documentId: file.id, on } })
+      .then((result) => {
+        if (!result.ok) throw new Error(result.message);
+      })
+      .catch(() => {
+        setFavorites((list) => (on ? list.filter((id) => id !== file.id) : [file.id, ...list]));
+        setNotice("Không lưu được mục yêu thích. Thử lại.");
+      });
+  }
+
+  function saveNickname(nickname: string) {
+    void run(async () => {
+      const result = await setNickname({ data: { nickname } });
+      if (!result.ok) {
+        setNotice(result.message);
+        return;
+      }
+      setMe((current) => (current ? { ...current, nickname: result.data.nickname } : current));
+      setNotice(
+        result.data.nickname
+          ? `Đã đặt biệt danh “${result.data.nickname}”. Bình luận của bạn hiện tên này, chủ web vẫn thấy tên thật.`
+          : "Đã bỏ biệt danh. Bình luận của bạn hiện tên thật.",
+      );
+    });
+  }
+
+  function updateFile(file: FileMeta, change: { name: string; subjectId: string }) {
+    return run(async () => {
+      const moved = change.subjectId !== subject?.id;
+      const result = await updateDocument({ data: { id: file.id, name: change.name, subjectId: change.subjectId } });
+      if (!result.ok) {
+        setNotice(result.message);
+        return;
+      }
+      await reload();
+      setNotice(moved ? "Đã chuyển tài liệu sang môn khác." : "Đã đổi tên tài liệu.");
+    });
+  }
+
+  const idle = !loading && !error && !searching && !panel && !viewer;
   const badges: Partial<Record<TabId, number>> = owner ? { me: pendingReviews + resetRequests } : {};
+  const dots: Partial<Record<TabId, string>> = !owner && newTotal > 0 ? { subjects: `${newTotal} tài liệu mới` } : {};
 
   return (
     <div className="min-h-screen bg-bg text-fg">
@@ -412,6 +874,10 @@ export function LibraryApp() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
+              onFocus={openSearch}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") rememberSearch(query);
+              }}
               type="search"
               placeholder="Tìm tài liệu, môn học…"
               aria-label="Tìm tài liệu"
@@ -428,7 +894,7 @@ export function LibraryApp() {
             {notice}
           </p>
         ) : null}
-        {!loading && !error && !query.trim() && !panel && !viewer && me?.legacyEnabled && tab === "me" ? (
+        {!loading && !error && !searching && !panel && !viewer && me?.legacyEnabled && tab === "me" ? (
           <PasswordBanner
             busy={busy}
             onSave={(password) =>
@@ -444,16 +910,32 @@ export function LibraryApp() {
             }
           />
         ) : null}
-        {!loading && !error && query.trim() ? <SearchResults hits={filtered} /> : null}
-        {!loading && !error && !query.trim() && panel === "users" && owner ? (
-          <PeoplePanel busy={busy} onBack={() => setPanel(null)} onChanged={reload} setNotice={setNotice} run={run} />
+        {!loading && !error && searching ? (
+          <SearchResults
+            hits={hits}
+            query={query}
+            filters={filters}
+            filtersActive={filtersActive}
+            subjects={subjects}
+            recent={recent}
+            onFilters={setFilters}
+            onPickRecent={(term) => {
+              setQuery(term);
+              rememberSearch(term);
+            }}
+            onClearRecent={clearRecent}
+            onClose={leaveSearch}
+          />
         ) : null}
-        {!loading && !error && !query.trim() && panel === "share" && !owner ? (
+        {!loading && !error && !searching && panel === "users" && owner ? (
+          <PeoplePanel busy={busy} onBack={goBack} onChanged={reload} setNotice={setNotice} run={run} />
+        ) : null}
+        {!loading && !error && !searching && panel === "share" && !owner ? (
           <SharePanel
             subjects={subjects}
             submissions={mySubmissions}
             busy={busy}
-            onBack={() => setPanel(null)}
+            onBack={goBack}
             onSubmit={(payload) =>
               run(async () => {
                 const result = await submitDocument({ data: payload });
@@ -467,32 +949,34 @@ export function LibraryApp() {
             }
           />
         ) : null}
-        {!loading && !error && !query.trim() && panel === "review" && owner ? (
-          <ReviewPanel busy={busy} onBack={() => setPanel(null)} onChanged={reload} setNotice={setNotice} run={run} />
+        {!loading && !error && !searching && panel === "review" && owner ? (
+          <ReviewPanel busy={busy} onBack={goBack} onChanged={reload} setNotice={setNotice} run={run} />
         ) : null}
-        {!loading && !error && !query.trim() && panel === "info" && owner ? (
-          <InfoPanel onBack={() => setPanel(null)} setNotice={setNotice} />
+        {!loading && !error && !searching && panel === "info" && owner ? (
+          <InfoPanel onBack={goBack} setNotice={setNotice} />
         ) : null}
-        {!loading && !error && !query.trim() && !panel && viewer?.kind === "practice" ? (
+        {!loading && !error && !searching && !panel && viewer?.kind === "practice" ? (
           <section>
-            <button type="button" className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-accent-2" onClick={() => setViewer(null)}>
+            <button type="button" className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-accent-2" onClick={goBack}>
               <ArrowLeft aria-hidden="true" className="size-4" />
               Quay lại
             </button>
             <h1 className="mb-3 text-2xl font-semibold break-words">{viewer.name}</h1>
             <iframe
+              ref={frameRef}
               title={viewer.name}
               sandbox="allow-scripts allow-forms allow-modals"
-              srcDoc={viewer.html}
+              srcDoc={withQuizBridge(viewer.html)}
               className="h-[70vh] w-full rounded-2xl border border-line bg-white"
             />
-            <PracticeComments documentId={viewer.id} />
+            <QuizResultCard result={quizResult} owner={Boolean(owner)} best={bests[viewer.id]} />
+            <PracticeComments documentId={viewer.id} nickname={me?.nickname ?? ""} viewerIsOwner={Boolean(owner)} />
           </section>
         ) : null}
-        {!loading && !error && !query.trim() && !panel && viewer?.kind === "file" ? (
+        {!loading && !error && !searching && !panel && viewer?.kind === "file" ? (
           <FilePreview
             viewer={viewer}
-            onBack={() => setViewer(null)}
+            onBack={goBack}
             onDownload={() => {
               void trackUse({ data: { id: viewer.id, kind: "download" } });
             }}
@@ -531,13 +1015,19 @@ export function LibraryApp() {
         {idle && tab === "subjects" && subject ? (
           <SubjectView
             subject={subject}
+            allSubjects={subjects}
             section={section}
             owner={Boolean(owner)}
             busy={busy}
-            onBack={() => setSubjectId(null)}
+            favorites={favoriteSet}
+            bests={bests}
+            freshIds={freshIds}
+            onBack={goBack}
             onSection={setSection}
             onOpen={openFile}
             onDownload={downloadFile}
+            onToggleFavorite={toggleFavorite}
+            onUpdate={updateFile}
             onDeleteSubject={() =>
               run(async () => {
                 const result = await deleteSubject({ data: { id: subject.id } });
@@ -595,6 +1085,7 @@ export function LibraryApp() {
         {idle && tab === "subjects" && !subject ? (
           <SubjectsTab
             subjects={subjects}
+            newCounts={newBySubject}
             owner={Boolean(owner)}
             busy={busy}
             onOpen={(id) => openSubject(id)}
@@ -621,6 +1112,9 @@ export function LibraryApp() {
             rankVersion={rankVersion}
             onOpenQuiz={openFile}
             onToggleAnonymous={toggleAnonymous}
+            favorites={favoriteSet}
+            bests={bests}
+            onToggleFavorite={toggleFavorite}
           />
         ) : null}
         {idle && tab === "me" ? (
@@ -633,10 +1127,57 @@ export function LibraryApp() {
             submissions={mySubmissions}
             onOpenPanel={openPanel}
             onToggleAnonymous={toggleAnonymous}
+            onSaveNickname={saveNickname}
+            favoriteItems={favoriteItems}
+            onOpenFile={openFile}
+            onToggleFavorite={toggleFavorite}
+            statsVersion={rankVersion}
           />
         ) : null}
       </main>
-      <BottomNav active={tab} badges={badges} onChange={selectTab} />
+      <BottomNav active={tab} badges={badges} dots={dots} onChange={selectTab} />
+    </div>
+  );
+}
+
+function FavoriteButton({ on, name, onClick }: { on: boolean; name: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-label={on ? `Bỏ lưu ${name}` : `Lưu ${name}`}
+      onClick={onClick}
+      className={`grid size-11 shrink-0 place-items-center rounded-full ${on ? "text-[#c58a00]" : "text-muted"}`}
+    >
+      <Star aria-hidden="true" className="size-5" fill={on ? "currentColor" : "none"} />
+    </button>
+  );
+}
+
+function QuizResultCard({ result, owner, best }: { result: QuizSaved | null; owner: boolean; best?: number }) {
+  if (!result) {
+    return (
+      <p className="mt-3 rounded-2xl bg-blue px-4 py-3 text-sm text-pretty">
+        {owner
+          ? "Bạn là chủ web nên kết quả làm thử không được lưu."
+          : best !== undefined
+            ? `Điểm cao nhất của bạn với đề này: ${best}%. Làm xong bài, điểm mới sẽ tự được lưu.`
+            : "Làm xong bài, điểm của bạn sẽ tự được lưu và tính vào bảng xếp hạng."}
+      </p>
+    );
+  }
+  return (
+    <div role="status" aria-live="polite" className="mt-3 rounded-2xl border border-accent bg-pink px-4 py-3">
+      <p className="font-semibold">
+        Kết quả: {result.score}/{result.total} ({result.percent}%)
+      </p>
+      <p className="text-sm text-muted">
+        {!result.saved
+          ? "Chủ web làm thử nên kết quả không được lưu."
+          : result.improved
+            ? `Đã lưu. Đây là điểm cao nhất của bạn với đề này: ${result.best}%.`
+            : `Đã lưu. Điểm cao nhất của bạn vẫn là ${result.best}%.`}
+      </p>
     </div>
   );
 }
@@ -779,12 +1320,14 @@ function HomeTab({
 
 function SubjectsTab({
   subjects,
+  newCounts,
   owner,
   busy,
   onOpen,
   onAdd,
 }: {
   subjects: Subject[];
+  newCounts: Map<string, number>;
   owner: boolean;
   busy: boolean;
   onOpen: (id: string) => void;
@@ -847,6 +1390,11 @@ function SubjectsTab({
               <span className="min-w-0 flex-1">
                 <span className="block text-lg font-semibold break-words">{item.name}</span>
                 <span className="text-sm text-muted">{countFiles(item)} tài liệu</span>
+                {newCounts.get(item.id) ? (
+                  <span className="ml-2 rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-on-accent">
+                    {newCounts.get(item.id)} mới
+                  </span>
+                ) : null}
               </span>
               <ChevronRight aria-hidden="true" className="size-5 shrink-0 text-muted" />
             </button>
@@ -889,6 +1437,46 @@ function AnonymousCard({ anonymous, busy, onChange }: { anonymous: boolean; busy
   );
 }
 
+function NicknameCard({ nickname, busy, onSave }: { nickname: string; busy: boolean; onSave: (nickname: string) => void }) {
+  const [value, setValue] = useState(nickname);
+  useEffect(() => {
+    setValue(nickname);
+  }, [nickname]);
+  const changed = value.trim() !== nickname;
+  return (
+    <form
+      className="rounded-2xl border border-line bg-surface px-4 py-3"
+      onSubmit={(event: FormEvent) => {
+        event.preventDefault();
+        if (changed && !busy) onSave(value);
+      }}
+    >
+      <label className="block font-semibold" htmlFor="nickname-input">
+        Biệt danh trong bình luận
+      </label>
+      <p className="mt-0.5 text-sm text-muted text-pretty">
+        {nickname
+          ? `Bình luận của bạn đang hiện là “${nickname}”. Chủ web vẫn thấy tên thật của bạn.`
+          : "Đặt biệt danh để bình luận không lộ tên thật. Chủ web vẫn thấy tên thật của bạn."}
+      </p>
+      <div className="mt-2 flex gap-2">
+        <input
+          id="nickname-input"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          maxLength={NICKNAME_MAX}
+          placeholder="Ví dụ: Mèo Con"
+          autoComplete="off"
+          className="h-12 min-w-0 flex-1 rounded-xl border border-pink-deep bg-surface px-3"
+        />
+        <button type="submit" disabled={busy || !changed} className="h-12 shrink-0 rounded-full bg-accent-2 px-5 font-semibold text-on-accent disabled:opacity-60">
+          {!value.trim() && nickname ? "Bỏ" : "Lưu"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function PracticeTab({
   subjects,
   view,
@@ -898,6 +1486,9 @@ function PracticeTab({
   rankVersion,
   onOpenQuiz,
   onToggleAnonymous,
+  favorites,
+  bests,
+  onToggleFavorite,
 }: {
   subjects: Subject[];
   view: "quizzes" | "rank";
@@ -907,6 +1498,9 @@ function PracticeTab({
   rankVersion: number;
   onOpenQuiz: (file: FileMeta) => void;
   onToggleAnonymous: (next: boolean) => void;
+  favorites: Set<string>;
+  bests: Record<string, number>;
+  onToggleFavorite: (file: FileMeta) => void;
 }) {
   const withQuizzes = subjects.filter((item) => item.files.practice.length > 0);
   return (
@@ -943,8 +1537,12 @@ function PracticeTab({
                       <FileIcon name={file.name} mime={file.mime} section={file.section} />
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold break-words">{file.name}</p>
-                        <p className="text-sm text-muted">{file.created}</p>
+                        <p className="text-sm text-muted">
+                          {file.created}
+                          {bests[file.id] !== undefined ? ` · Kỷ lục ${bests[file.id]}%` : ""}
+                        </p>
                       </div>
+                      <FavoriteButton on={favorites.has(file.id)} name={file.name} onClick={() => onToggleFavorite(file)} />
                       <button
                         type="button"
                         disabled={busy}
@@ -987,6 +1585,11 @@ function MeTab({
   submissions,
   onOpenPanel,
   onToggleAnonymous,
+  onSaveNickname,
+  favoriteItems,
+  onOpenFile,
+  onToggleFavorite,
+  statsVersion,
 }: {
   me: Member | null;
   gate: boolean;
@@ -996,6 +1599,11 @@ function MeTab({
   submissions: MySubmission[];
   onOpenPanel: (panel: Panel) => void;
   onToggleAnonymous: (next: boolean) => void;
+  onSaveNickname: (nickname: string) => void;
+  favoriteItems: FavoriteItem[];
+  onOpenFile: (file: FileMeta) => void;
+  onToggleFavorite: (file: FileMeta) => void;
+  statsVersion: number;
 }) {
   const [stats, setStats] = useState<MyStats | null>(null);
   useEffect(() => {
@@ -1008,7 +1616,7 @@ function MeTab({
     return () => {
       alive = false;
     };
-  }, []);
+  }, [statsVersion]);
 
   if (!me) return <SkeletonList rows={3} />;
   const owner = me.role === "owner";
@@ -1044,15 +1652,17 @@ function MeTab({
       ) : null}
 
       {!owner ? (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {stats ? (
             <>
-              <StatTile value={stats.attempts} label="lần làm đề" tone="pink" />
+              <StatTile value={stats.points} label="điểm xếp hạng" tone="pink" />
               <StatTile value={stats.quizzes} label="đề đã làm" tone="blue" />
-              <StatTile value={stats.downloads} label="lần tải" tone="pink" />
+              <StatTile value={stats.attempts} label="lần làm đề" tone="pink" />
+              <StatTile value={stats.downloads} label="lần tải" tone="blue" />
             </>
           ) : (
             <>
+              <Skeleton className="h-16" />
               <Skeleton className="h-16" />
               <Skeleton className="h-16" />
               <Skeleton className="h-16" />
@@ -1061,7 +1671,34 @@ function MeTab({
         </div>
       ) : null}
 
+      <div>
+        <h2 className="mb-2 font-semibold">Đã lưu{favoriteItems.length ? ` (${favoriteItems.length})` : ""}</h2>
+        {favoriteItems.length ? (
+          <ul className="space-y-2">
+            {favoriteItems.map(({ file, subject }) => (
+              <li key={file.id} className="flex items-center gap-2 rounded-2xl border border-line bg-surface py-2 pr-1 pl-3">
+                <button type="button" disabled={busy} onClick={() => onOpenFile(file)} className="flex min-h-12 min-w-0 flex-1 items-center gap-3 text-left">
+                  <FileIcon name={file.name} mime={file.mime} section={file.section} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-semibold break-words">{file.name}</span>
+                    <span className="block truncate text-sm text-muted">
+                      {subject.name} · {sectionLabel(file.section)}
+                    </span>
+                  </span>
+                </button>
+                <FavoriteButton on name={file.name} onClick={() => onToggleFavorite(file)} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="rounded-2xl border border-dashed border-pink-deep px-4 py-4 text-center text-sm text-muted text-pretty">
+            Chạm ngôi sao ở tài liệu hoặc đề thực hành để lưu lại đây và mở nhanh lần sau.
+          </p>
+        )}
+      </div>
+
       {!owner ? <AnonymousCard anonymous={me.anonymous} busy={busy} onChange={onToggleAnonymous} /> : null}
+      {!owner ? <NicknameCard nickname={me.nickname} busy={busy} onSave={onSaveNickname} /> : null}
 
       <div>
         <h2 className="mb-2 font-semibold">Giao diện</h2>
@@ -1120,33 +1757,71 @@ function MeTab({
 
 function SubjectView({
   subject,
+  allSubjects,
   section,
   owner,
   busy,
+  favorites,
+  bests,
+  freshIds,
   onBack,
   onSection,
   onOpen,
   onDownload,
+  onToggleFavorite,
+  onUpdate,
   onDeleteSubject,
   onDeleteFile,
   onUpload,
 }: {
   subject: Subject;
+  allSubjects: Subject[];
   section: SectionId;
   owner: boolean;
   busy: boolean;
+  favorites: Set<string>;
+  bests: Record<string, number>;
+  freshIds: Set<string>;
   onBack: () => void;
   onSection: (id: SectionId) => void;
   onOpen: (file: FileMeta) => void;
   onDownload: (file: FileMeta) => void;
+  onToggleFavorite: (file: FileMeta) => void;
+  onUpdate: (file: FileMeta, change: { name: string; subjectId: string }) => void;
   onDeleteSubject: () => void;
   onDeleteFile: (file: FileMeta) => void;
   onUpload: (file: File) => void;
 }) {
   const spec = sectionById(section) ?? SECTIONS[0];
-  const files = subject.files[section];
   const [confirmSubject, setConfirmSubject] = useState(false);
   const [confirmFile, setConfirmFile] = useState<string | null>(null);
+  const [sort, setSort] = useState<SortMode>(readSortMode);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const [draftSubject, setDraftSubject] = useState(subject.id);
+
+  const total = subject.files[section].length;
+  const files = useMemo(() => {
+    const list = subject.files[section].map((file, index) => ({ file, index }));
+    list.sort((a, b) => {
+      if (sort === "oldest") return a.index - b.index;
+      if (sort === "name") return a.file.name.localeCompare(b.file.name, "vi", { numeric: true });
+      if (sort === "size") return b.file.bytes - a.file.bytes || b.index - a.index;
+      if (sort === "favorite") {
+        return Number(favorites.has(b.file.id)) - Number(favorites.has(a.file.id)) || b.index - a.index;
+      }
+      return b.index - a.index;
+    });
+    return list.map((item) => item.file);
+  }, [subject, section, sort, favorites]);
+
+  function startEdit(file: FileMeta) {
+    setEditing(file.id);
+    setDraftName(file.name);
+    setDraftSubject(subject.id);
+    setConfirmFile(null);
+  }
+
   return (
     <section>
       <button type="button" className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
@@ -1207,6 +1882,30 @@ function SubjectView({
           </label>
         </div>
       ) : null}
+      {total > 1 ? (
+        <label className="mb-3 flex items-center gap-2 text-sm text-muted">
+          Sắp xếp
+          <select
+            value={sort}
+            onChange={(event) => {
+              const next = event.target.value as SortMode;
+              setSort(next);
+              try {
+                localStorage.setItem(SORT_KEY, next);
+              } catch {
+                /* ignore */
+              }
+            }}
+            className="h-11 rounded-xl border border-pink-deep bg-surface px-3 text-fg"
+          >
+            {SORT_OPTIONS.map(([id, label]) => (
+              <option key={id} value={id}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       {files.length ? (
         <ul className="space-y-2">
           {files.map((file) => (
@@ -1214,12 +1913,19 @@ function SubjectView({
               <div className="flex items-center gap-3">
                 <FileIcon name={file.name} mime={file.mime} section={file.section} />
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold break-words">{file.name}</p>
+                  <p className="font-semibold break-words">
+                    {file.name}
+                    {freshIds.has(file.id) ? (
+                      <span className="ml-2 rounded-full bg-accent px-2 py-0.5 align-middle text-xs font-semibold text-on-accent">Mới</span>
+                    ) : null}
+                  </p>
                   <p className="text-sm text-muted">
                     {kindLabel(fileKind(file.name, file.mime, file.section))}
                     {formatBytes(file.bytes) ? ` · ${formatBytes(file.bytes)}` : ""} · {file.created}
+                    {section === "practice" && bests[file.id] !== undefined ? ` · Kỷ lục ${bests[file.id]}%` : ""}
                   </p>
                 </div>
+                <FavoriteButton on={favorites.has(file.id)} name={file.name} onClick={() => onToggleFavorite(file)} />
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button type="button" className="h-11 rounded-full bg-accent px-4 text-sm font-semibold text-on-accent" onClick={() => onOpen(file)}>
@@ -1230,21 +1936,75 @@ function SubjectView({
                   Tải về
                 </button>
                 {owner ? (
-                  <button
-                    type="button"
-                    className="h-11 rounded-full border border-pink-deep px-4 text-sm font-semibold text-danger"
-                    onClick={() => {
-                      if (confirmFile !== file.id) {
-                        setConfirmFile(file.id);
-                        return;
-                      }
-                      onDeleteFile(file);
-                    }}
-                  >
-                    {confirmFile === file.id ? "Xóa?" : "Xóa"}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="inline-flex h-11 items-center gap-1 rounded-full border border-pink-deep bg-surface px-4 text-sm font-semibold"
+                      onClick={() => (editing === file.id ? setEditing(null) : startEdit(file))}
+                    >
+                      <Pencil aria-hidden="true" className="size-4" />
+                      Sửa
+                    </button>
+                    <button
+                      type="button"
+                      className="h-11 rounded-full border border-pink-deep px-4 text-sm font-semibold text-danger"
+                      onClick={() => {
+                        if (confirmFile !== file.id) {
+                          setConfirmFile(file.id);
+                          return;
+                        }
+                        onDeleteFile(file);
+                      }}
+                    >
+                      {confirmFile === file.id ? "Xóa?" : "Xóa"}
+                    </button>
+                  </>
                 ) : null}
               </div>
+              {owner && editing === file.id ? (
+                <form
+                  className="mt-3 space-y-2 rounded-xl bg-blue p-3"
+                  onSubmit={(event: FormEvent) => {
+                    event.preventDefault();
+                    const name = draftName.trim();
+                    if (!name) return;
+                    onUpdate(file, { name, subjectId: draftSubject });
+                    setEditing(null);
+                  }}
+                >
+                  <label className="block text-sm font-medium">
+                    Tên tài liệu
+                    <input
+                      value={draftName}
+                      onChange={(event) => setDraftName(event.target.value)}
+                      maxLength={180}
+                      className="mt-1 h-12 w-full rounded-xl border border-pink-deep bg-surface px-3 font-normal"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium">
+                    Chuyển sang môn
+                    <select
+                      value={draftSubject}
+                      onChange={(event) => setDraftSubject(event.target.value)}
+                      className="mt-1 h-12 w-full rounded-xl border border-pink-deep bg-surface px-3 font-normal"
+                    >
+                      {allSubjects.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="flex gap-2">
+                    <button type="submit" disabled={busy || !draftName.trim()} className="h-11 rounded-full bg-accent-2 px-5 text-sm font-semibold text-on-accent disabled:opacity-60">
+                      Lưu thay đổi
+                    </button>
+                    <button type="button" onClick={() => setEditing(null)} className="h-11 rounded-full border border-pink-deep bg-surface px-5 text-sm font-semibold">
+                      Hủy
+                    </button>
+                  </div>
+                </form>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -1301,11 +2061,107 @@ function FilePreview({
   );
 }
 
-function SearchResults({ hits }: { hits: SearchHit[] }) {
+function SearchResults({
+  hits,
+  query,
+  filters,
+  filtersActive,
+  subjects,
+  recent,
+  onFilters,
+  onPickRecent,
+  onClearRecent,
+  onClose,
+}: {
+  hits: SearchHit[];
+  query: string;
+  filters: SearchFilters;
+  filtersActive: boolean;
+  subjects: Subject[];
+  recent: string[];
+  onFilters: (next: SearchFilters) => void;
+  onPickRecent: (term: string) => void;
+  onClearRecent: () => void;
+  onClose: () => void;
+}) {
+  const hasQuery = query.trim().length > 0;
+  const chip = (active: boolean) =>
+    `h-11 shrink-0 rounded-full border px-4 text-sm font-semibold ${active ? "border-accent bg-pink text-accent" : "border-pink-deep bg-surface"}`;
   return (
     <section>
-      <h1 className="mb-3 text-2xl font-semibold">Kết quả tìm kiếm ({hits.length})</h1>
-      {hits.length ? (
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">{hasQuery || filtersActive ? `Kết quả (${hits.length})` : "Tìm kiếm"}</h1>
+        <button type="button" onClick={onClose} className="inline-flex h-11 items-center gap-1 rounded-full border border-pink-deep bg-surface px-4 text-sm font-semibold">
+          <X aria-hidden="true" className="size-4" />
+          Đóng
+        </button>
+      </div>
+      <div className="mb-4 space-y-2" data-no-swipe>
+        <select
+          aria-label="Lọc theo môn"
+          value={filters.subject}
+          onChange={(event) => onFilters({ ...filters, subject: event.target.value })}
+          className="h-12 w-full rounded-xl border border-pink-deep bg-surface px-3"
+        >
+          <option value="">Mọi môn học</option>
+          {subjects.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+        <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Lọc theo mục">
+          <button type="button" aria-pressed={filters.section === "all"} className={chip(filters.section === "all")} onClick={() => onFilters({ ...filters, section: "all" })}>
+            Mọi mục
+          </button>
+          {SECTIONS.map((group) => (
+            <button
+              key={group.id}
+              type="button"
+              aria-pressed={filters.section === group.id}
+              className={chip(filters.section === group.id)}
+              onClick={() => onFilters({ ...filters, section: group.id })}
+            >
+              {group.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Lọc theo loại file">
+          {KIND_FILTERS.map(([id, label]) => (
+            <button key={id} type="button" aria-pressed={filters.kind === id} className={chip(filters.kind === id)} onClick={() => onFilters({ ...filters, kind: id })}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {filtersActive ? (
+          <button type="button" onClick={() => onFilters(NO_FILTERS)} className="h-11 text-sm font-semibold text-accent-2">
+            Xóa bộ lọc
+          </button>
+        ) : null}
+      </div>
+      {!hasQuery && !filtersActive ? (
+        recent.length ? (
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="font-semibold">Tìm gần đây</h2>
+              <button type="button" onClick={onClearRecent} className="h-11 text-sm font-semibold text-accent-2">
+                Xóa lịch sử
+              </button>
+            </div>
+            <ul className="flex flex-wrap gap-2">
+              {recent.map((term) => (
+                <li key={term}>
+                  <button type="button" onClick={() => onPickRecent(term)} className={chip(false)}>
+                    {term}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <EmptyState icon={Search} title="Tìm tài liệu" hint="Gõ tên tài liệu hoặc môn học. Gõ không dấu cũng được, ví dụ “toan” sẽ ra “Toán”." />
+        )
+      ) : hits.length ? (
         <ul className="space-y-2">
           {hits.map((hit) => (
             <li key={hit.key}>
@@ -1321,7 +2177,7 @@ function SearchResults({ hits }: { hits: SearchHit[] }) {
           ))}
         </ul>
       ) : (
-        <EmptyState icon={SearchX} title="Không tìm thấy kết quả" hint="Thử từ khóa ngắn hơn hoặc tên môn học." />
+        <EmptyState icon={SearchX} title="Không tìm thấy kết quả" hint="Thử từ khóa ngắn hơn, bỏ bớt bộ lọc hoặc gõ tên môn học." />
       )}
     </section>
   );
@@ -1986,7 +2842,7 @@ function UserDetail({ userId, setNotice }: { userId: string; setNotice: (value: 
   );
 }
 
-function PracticeComments({ documentId }: { documentId: string }) {
+function PracticeComments({ documentId, nickname, viewerIsOwner }: { documentId: string; nickname: string; viewerIsOwner: boolean }) {
   const [items, setItems] = useState<CommentItem[] | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2029,8 +2885,13 @@ function PracticeComments({ documentId }: { documentId: string }) {
               <li key={item.id} className="rounded-xl bg-pink px-3 py-2">
                 <p className="text-sm">
                   <span className="font-semibold">{item.author}</span>
+                  {item.byOwner ? (
+                    <span className="ml-1.5 rounded-full bg-surface px-2 py-0.5 text-xs font-semibold text-accent">Chủ web</span>
+                  ) : null}
+                  {item.mine && !item.byOwner ? <span className="ml-1.5 text-xs text-muted">(bạn)</span> : null}
                   <span className="text-muted"> · {item.created}</span>
                 </p>
+                {item.realName ? <p className="text-xs text-accent-2">Tên thật: {item.realName}</p> : null}
                 <p className="break-words">{item.body}</p>
                 {item.canDelete ? (
                   <button
@@ -2089,7 +2950,11 @@ function PracticeComments({ documentId }: { documentId: string }) {
         }}
       >
         <label className="block text-sm font-medium">
-          Viết bình luận
+          {viewerIsOwner
+            ? "Viết bình luận (hiện tên chủ web)"
+            : nickname
+              ? `Viết bình luận (hiện là “${nickname}”)`
+              : "Viết bình luận (hiện tên thật của bạn, đặt biệt danh ở tab Tôi)"}
           <textarea
             value={text}
             onChange={(event) => setText(event.target.value)}

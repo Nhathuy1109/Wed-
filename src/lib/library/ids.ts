@@ -33,7 +33,6 @@ export type FileMeta = {
   mime: string;
   bytes: number;
   created: string;
-  createdAt: number;
   section: SectionId;
 };
 
@@ -49,6 +48,9 @@ export type Member = {
   role: "owner" | "user";
   legacyEnabled: boolean;
   previewOwner: boolean;
+  anonymous: boolean;
+  /** Biệt danh dùng trong bình luận ("" nếu chưa đặt). */
+  nickname: string;
 };
 
 export type Person = {
@@ -83,10 +85,15 @@ export type ReviewItem = {
 
 export type CommentItem = {
   id: string;
+  /** Biệt danh nếu người viết đã đặt, ngược lại là tên thật. */
   author: string;
+  /** Chỉ có khi người xem là chủ web và người viết đang dùng biệt danh. */
+  realName?: string;
   body: string;
   created: string;
   canDelete: boolean;
+  mine: boolean;
+  byOwner: boolean;
 };
 
 export type LibraryNotice = {
@@ -110,59 +117,107 @@ export type UserStats = {
   quizzes: { subject: string; name: string; attempts: number }[];
 };
 
-export type LeaderboardRow = {
-  name: string;
-  username: string;
-  score: number;
-  total: number;
-  created: string;
-};
-
-export type LeaderboardChapter = {
-  chapter: string;
-  rows: LeaderboardRow[];
-};
-
-export type WrongQuestion = {
-  q: string;
-  o: string[];
-  a: number;
-  e: string;
-};
-
-export type HistoryItem = {
-  id: string;
-  chapter: string;
-  score: number;
-  total: number;
-  created: string;
-  wrongCount: number;
-};
-
-export type ReportItem = {
-  id: string;
-  documentName: string;
-  subjectName: string;
-  chapter: string;
-  question: string;
-  note: string;
-  author: string;
-  username: string;
-  created: string;
-};
-
-export type QuizStat = {
-  id: string;
-  name: string;
-  subjectName: string;
+export type MyStats = {
+  downloads: number;
+  /** Số lần làm đề đã được lưu kết quả. */
   attempts: number;
-  people: number;
-  average: number;
-  chapters: { chapter: string; attempts: number; average: number }[];
+  /** Số đề khác nhau đã có kết quả. */
+  quizzes: number;
+  /** Điểm xếp hạng: tổng điểm cao nhất (%) của từng đề. */
+  points: number;
 };
+
+export type QuizSaved = {
+  saved: boolean;
+  score: number;
+  total: number;
+  percent: number;
+  /** Điểm cao nhất (%) của đề này sau lần làm vừa rồi. */
+  best: number;
+  /** Lần đầu làm đề hoặc vừa phá kỷ lục cũ. */
+  improved: boolean;
+};
+
+export type LeaderboardEntry = {
+  rank: number;
+  /** "Ẩn danh" khi người này đang ẩn và người xem không phải chủ web hay chính họ. */
+  name: string;
+  /** Chỉ có khi người xem là chủ web hoặc chính người đó. */
+  username?: string;
+  /** Tổng điểm cao nhất (%) của từng đề đã làm. */
+  points: number;
+  /** Số đề khác nhau đã có kết quả. */
+  quizzes: number;
+  /** Tổng số lần làm đã lưu. */
+  attempts: number;
+  /** Điểm trung bình (%) trên các đề đã làm. */
+  average: number;
+  isMe: boolean;
+  anonymous: boolean;
+};
+
+export type Leaderboard = {
+  entries: LeaderboardEntry[];
+  me: LeaderboardEntry | null;
+  total: number;
+  viewerIsOwner: boolean;
+};
+
+export const ANONYMOUS_LABEL = "Ẩn danh";
+
+export type FileKind = "pdf" | "word" | "sheet" | "slides" | "image" | "archive" | "quiz" | "text" | "other";
+
+export function fileKind(name: string, mime: string, section?: string): FileKind {
+  if (section === "practice") return "quiz";
+  const ext = (name.split(".").pop() ?? "").toLowerCase();
+  const type = mime.toLowerCase();
+  if (type === "application/pdf" || ext === "pdf") return "pdf";
+  if (type.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp", "svg", "heic"].includes(ext)) return "image";
+  if (["doc", "docx", "odt", "rtf"].includes(ext) || type.includes("word")) return "word";
+  if (["xls", "xlsx", "csv", "ods"].includes(ext) || type.includes("sheet") || type.includes("excel")) return "sheet";
+  if (["ppt", "pptx", "odp"].includes(ext) || type.includes("presentation") || type.includes("powerpoint")) return "slides";
+  if (["zip", "rar", "7z", "tar", "gz"].includes(ext) || type.includes("zip")) return "archive";
+  if (["txt", "md", "html", "htm"].includes(ext) || type.startsWith("text/")) return "text";
+  return "other";
+}
+
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export const FRESH_VISIT_KEY = "library-fresh-visit";
 export const NOTICE_CACHE_KEY = "library-notices";
+
+/** Bỏ dấu tiếng Việt và hạ chữ thường, dùng để tìm kiếm và so khớp. */
+export function foldText(raw: string): string {
+  return raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/gi, "d")
+    .toLowerCase();
+}
+
+export const NICKNAME_MIN = 2;
+export const NICKNAME_MAX = 30;
+const NICKNAME_CHARS = /^[\p{L}\p{N} _.\-]+$/u;
+const RESERVED_NICKNAMES = ["owner", "admin", "administrator", "chu web", "chuweb", "quan tri", "quan tri vien", "an danh"];
+
+/** Trả về thông báo lỗi nếu biệt danh không hợp lệ, hoặc null nếu dùng được. */
+export function nicknameProblem(raw: string): string | null {
+  const nick = raw.trim().replace(/\s+/g, " ");
+  if (nick.length < NICKNAME_MIN || nick.length > NICKNAME_MAX) {
+    return `Biệt danh cần từ ${NICKNAME_MIN} đến ${NICKNAME_MAX} ký tự.`;
+  }
+  if (!NICKNAME_CHARS.test(nick)) return "Biệt danh chỉ gồm chữ, số, khoảng trắng, dấu chấm, gạch ngang hoặc gạch dưới.";
+  const folded = foldText(nick);
+  if (RESERVED_NICKNAMES.includes(folded) || folded === OWNER_USERNAME.toLowerCase()) {
+    return "Biệt danh này được dành riêng. Hãy chọn tên khác.";
+  }
+  return null;
+}
 
 export function normalizeUsername(raw: string): string | null {
   const username = raw.trim();

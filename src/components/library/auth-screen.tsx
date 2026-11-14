@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { BookOpen, Eye, EyeOff } from "lucide-react";
-import { registerMember, requestPasswordReset } from "@/lib/library/api";
+import { registerMember } from "@/lib/library/api";
 import { signInWithUsername } from "@/lib/library/client-auth";
 import { OWNER_USERNAME, FRESH_VISIT_KEY, NOTICE_CACHE_KEY } from "@/lib/library/ids";
 
@@ -48,14 +48,12 @@ function PasswordField({ register }: { register: boolean }) {
 export function AuthScreen() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<"user" | "owner">("user");
-  const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
-  const [forgotDone, setForgotDone] = useState(false);
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [message, setMessage] = useState(takeNotice);
   const [pending, setPending] = useState(false);
 
   const owner = tab === "owner";
   const register = !owner && mode === "register";
-  const forgot = !owner && mode === "forgot";
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -67,15 +65,6 @@ export function AuthScreen() {
     setPending(true);
     setMessage("");
     try {
-      if (forgot) {
-        const sent = await requestPasswordReset({ data: { username } });
-        if (!sent.ok) {
-          setMessage(sent.message);
-          return;
-        }
-        setForgotDone(true);
-        return;
-      }
       if (register) {
         const created = await registerMember({ data: { username, password, displayName } });
         if (!created.ok) {
@@ -146,16 +135,14 @@ export function AuthScreen() {
             </button>
           </div>
           <h1 className="mb-1 text-2xl font-semibold">
-            {owner ? "Đăng nhập Owner" : register ? "Đăng ký tài khoản" : forgot ? "Quên mật khẩu" : "Đăng nhập"}
+            {owner ? "Đăng nhập Owner" : register ? "Đăng ký tài khoản" : "Đăng nhập"}
           </h1>
           <p className="mb-4 text-sm text-pretty text-muted">
             {owner
               ? "Mật khẩu được kiểm tra trên máy chủ. Sau lần vào đầu tiên, hãy đặt mật khẩu mới."
-              : forgot
-                ? "Nhập tên đăng nhập của bạn rồi gửi yêu cầu cho chủ web."
-                : "Tài khoản lưu trên máy chủ, nên đổi điện thoại hay trình duyệt vẫn đăng nhập được."}
+              : "Tài khoản lưu trên máy chủ, nên đổi điện thoại hay trình duyệt vẫn đăng nhập được."}
           </p>
-          <form key={owner ? "owner" : mode} onSubmit={onSubmit} className={`space-y-3 ${forgot && forgotDone ? "hidden" : ""}`}>
+          <form key={owner ? "owner" : mode} onSubmit={onSubmit} className="space-y-3">
             {register ? (
               <label className="block text-sm font-medium">
                 Họ và tên
@@ -184,7 +171,7 @@ export function AuthScreen() {
                 className="mt-1 h-12 w-full rounded-xl border border-pink-deep bg-surface px-3 font-normal"
               />
             </label>
-            {forgot ? null : <PasswordField register={register} />}
+            <PasswordField register={register} />
             {message ? (
               <p role="alert" className="rounded-xl bg-danger-bg px-3 py-2 text-sm text-danger">
                 {message}
@@ -195,42 +182,21 @@ export function AuthScreen() {
               disabled={pending}
               className="h-12 w-full rounded-full bg-accent text-base font-semibold text-on-accent disabled:opacity-60"
             >
-              {pending ? "Đang xử lý…" : register ? "Đăng ký" : forgot ? "Gửi yêu cầu tạo mật khẩu" : "Đăng nhập"}
+              {pending ? "Đang xử lý…" : register ? "Đăng ký" : "Đăng nhập"}
             </button>
           </form>
-          {forgot && forgotDone ? (
-            <p role="status" className="rounded-xl bg-blue px-3 py-3 text-sm text-pretty">
-              Vui lòng liên hệ owner (Nhật Huy) để sớm đặt lại mật khẩu
-            </p>
-          ) : null}
-          {!owner && !register && !forgot ? (
-            <p className="mt-4 text-center text-sm">
-              <button
-                type="button"
-                className="font-semibold text-accent-2 underline"
-                onClick={() => {
-                  setMode("forgot");
-                  setForgotDone(false);
-                  setMessage("");
-                }}
-              >
-                Quên mật khẩu?
-              </button>
-            </p>
-          ) : null}
           {!owner ? (
             <p className="mt-4 text-center text-sm text-muted">
-              {register || forgot ? "Đã có tài khoản?" : "Chưa có tài khoản?"}{" "}
+              {register ? "Đã có tài khoản?" : "Chưa có tài khoản?"}{" "}
               <button
                 type="button"
                 className="font-semibold text-accent-2 underline"
                 onClick={() => {
-                  setMode(register || forgot ? "login" : "register");
-                  setForgotDone(false);
+                  setMode(register ? "login" : "register");
                   setMessage("");
                 }}
               >
-                {register || forgot ? "Đăng nhập" : "Đăng ký"}
+                {register ? "Đăng nhập" : "Đăng ký"}
               </button>
             </p>
           ) : null}

@@ -32,10 +32,13 @@ const TABS: { id: TabId; label: string; icon: LucideIcon }[] = [
 export function BottomNav({
   active,
   badges,
+  dots,
   onChange,
 }: {
   active: TabId;
   badges?: Partial<Record<TabId, number>>;
+  /** Chấm báo nhỏ (không số) cho tab có nội dung mới. */
+  dots?: Partial<Record<TabId, string>>;
   onChange: (tab: TabId) => void;
 }) {
   return (
@@ -47,6 +50,7 @@ export function BottomNav({
         {TABS.map((tab) => {
           const current = tab.id === active;
           const count = badges?.[tab.id] ?? 0;
+          const dotLabel = dots?.[tab.id];
           const Icon = tab.icon;
           return (
             <li key={tab.id} className="flex-1">
@@ -67,6 +71,12 @@ export function BottomNav({
                     >
                       {count > 9 ? "9+" : count}
                     </span>
+                  ) : dotLabel ? (
+                    <span
+                      role="img"
+                      aria-label={dotLabel}
+                      className="absolute -top-0.5 -right-1.5 size-2.5 rounded-full border-2 border-surface bg-accent"
+                    />
                   ) : null}
                 </span>
                 {tab.label}

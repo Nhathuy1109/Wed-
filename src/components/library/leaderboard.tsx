@@ -42,7 +42,7 @@ function Row({ entry, viewerIsOwner }: { entry: LeaderboardEntry; viewerIsOwner:
           {entry.isMe ? <span className="ml-2 text-sm font-medium text-accent">Bạn</span> : null}
         </p>
         <p className="truncate text-sm text-muted">
-          {entry.quizzes} đề khác nhau
+          {entry.quizzes} đề · TB {entry.average}% · {entry.attempts} lần làm
           {entry.anonymous && (entry.isMe || viewerIsOwner) ? (
             <span className="ml-2 inline-flex items-center gap-1 text-accent-2">
               <EyeOff aria-hidden="true" className="size-3.5" />
@@ -53,8 +53,8 @@ function Row({ entry, viewerIsOwner }: { entry: LeaderboardEntry; viewerIsOwner:
         </p>
       </div>
       <div className="shrink-0 text-right">
-        <p className="text-xl leading-none font-semibold text-accent">{entry.attempts}</p>
-        <p className="text-xs text-muted">lần làm</p>
+        <p className="text-xl leading-none font-semibold text-accent">{entry.points}</p>
+        <p className="text-xs text-muted">điểm</p>
       </div>
     </li>
   );
@@ -99,7 +99,7 @@ export function LeaderboardList({
       <EmptyState
         icon={Trophy}
         title="Chưa có ai trên bảng xếp hạng"
-        hint="Làm một đề thực hành để lên bảng đầu tiên."
+        hint="Làm xong một đề thực hành để điểm được lưu và lên bảng đầu tiên."
         action={
           onEmptyAction ? (
             <button
@@ -119,6 +119,11 @@ export function LeaderboardList({
   const meOutside = board.me && !shown.some((entry) => entry.isMe);
   return (
     <div>
+      {!limit ? (
+        <p className="mb-3 rounded-2xl bg-pink px-4 py-3 text-sm text-pretty">
+          Điểm xếp hạng là tổng điểm cao nhất (%) của từng đề bạn đã làm. Làm lại đề để phá kỷ lục, làm thêm đề mới để cộng thêm điểm.
+        </p>
+      ) : null}
       {board.viewerIsOwner && !limit ? (
         <p className="mb-3 rounded-2xl bg-blue px-4 py-3 text-sm text-pretty">
           Bạn là chủ web nên thấy tên thật của cả người đang ẩn danh. Người khác chỉ thấy “{ANONYMOUS_LABEL}”.
@@ -138,7 +143,7 @@ export function LeaderboardList({
         </div>
       ) : null}
       {!board.viewerIsOwner && !board.me ? (
-        <p className="mt-3 text-sm text-muted">Bạn chưa làm đề nào nên chưa có hạng.</p>
+        <p className="mt-3 text-sm text-muted">Bạn chưa có kết quả đề nào nên chưa có hạng.</p>
       ) : null}
     </div>
   );
