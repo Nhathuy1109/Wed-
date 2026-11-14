@@ -1,16 +1,45 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" shape-rendering="crispEdges">
-<path fill="#1d4145" d="M28 54h72v12h12v28H96v12H32V94H16V66h12z"/>
-<path fill="#397b68" d="M32 50h64v12h12v28H96v12H32V90H20V62h12z"/>
-<path fill="#235d59" d="M40 58h48v8h12v28H84v8H44v-8H32V66h8z"/>
-<path fill="#d2b46b" d="M44 62h12v12H44zM60 62h12v12H60zM76 62h12v12H76zM36 78h12v12H36zM52 78h12v12H52zM68 78h12v12H68zM84 78h12v12H84z"/>
-<path fill="#1d4145" d="M28 38h16V26h12v12h8v12H48v8H32V46h-4zM80 38h12V26h12v12h8v12H96v8H80V46z"/>
-<path fill="#397b68" d="M32 40h12V30h8v12h8v8H48v8H36v-8h-4zM84 40h12V30h8v12h8v8H96v8H84v-8z"/>
-<path fill="#f4c66f" d="M40 44h8v8h-8zM96 44h8v8h-8z"/>
-<path fill="#1d4145" d="M88 92h12v8h12v8h-8v8H92v-8H80v-8h8z"/>
-<path fill="#397b68" d="M92 96h12v8h8v4h-8v8H96v-8h-8v-4h4z"/>
-<path fill="#d7e4b7" d="M100 104h8v4h-8z"/>
-<path fill="#1d4145" d="M16 88h12v16h-8V96h-4zM100 88h12v16h-8v-8h-4z"/>
-<rect x="38" y="46" width="8" height="8" fill="#eaf0d2"/><rect x="42" y="46" width="4" height="4" fill="#273640"/>
-<rect x="94" y="46" width="8" height="8" fill="#eaf0d2"/><rect x="98" y="46" width="4" height="4" fill="#273640"/>
-<path fill="#f4c66f" d="M56 18h8v8h-8zM64 10h8v8h-8zM72 18h8v8h-8z"/>
+  <rect x="24" y="108" width="80" height="6" fill="#1a2a30" opacity=".2"/>
+  <!-- shell base -->
+  <rect x="24" y="48" width="80" height="40" fill="#2d5a4a"/>
+  <rect x="20" y="56" width="88" height="28" fill="#2d5a4a"/>
+  <!-- shell top dome -->
+  <rect x="32" y="40" width="64" height="16" fill="#3a7a62"/>
+  <rect x="40" y="36" width="48" height="12" fill="#3a7a62"/>
+  <!-- shell plates -->
+  <rect x="36" y="52" width="16" height="14" fill="#1e4038"/>
+  <rect x="56" y="52" width="16" height="14" fill="#1e4038"/>
+  <rect x="76" y="52" width="16" height="14" fill="#1e4038"/>
+  <rect x="36" y="70" width="16" height="12" fill="#1e4038"/>
+  <rect x="56" y="70" width="16" height="12" fill="#1e4038"/>
+  <rect x="76" y="70" width="16" height="12" fill="#1e4038"/>
+  <rect x="40" y="56" width="8" height="6" fill="#4a9a78"/>
+  <rect x="60" y="56" width="8" height="6" fill="#4a9a78"/>
+  <rect x="80" y="56" width="8" height="6" fill="#4a9a78"/>
+  <!-- head (snake-like from shell) -->
+  <rect x="88" y="28" width="24" height="28" fill="#2d5a4a"/>
+  <rect x="92" y="24" width="16" height="8" fill="#1e4038"/>
+  <rect x="96" y="20" width="12" height="8" fill="#1e4038"/>
+  <!-- eye -->
+  <rect x="104" y="36" width="10" height="10" fill="#f4e8c0"/>
+  <rect x="108" y="38" width="5" height="6" fill="#1a2a30"/>
+  <rect x="109" y="38" width="2" height="2" fill="#fff"/>
+  <!-- golden accents on shell -->
+  <rect x="48" y="44" width="8" height="4" fill="#d4a84a"/>
+  <rect x="72" y="44" width="8" height="4" fill="#d4a84a"/>
+  <rect x="60" y="40" width="8" height="4" fill="#e8c46a"/>
+  <!-- legs -->
+  <rect x="28" y="84" width="14" height="14" fill="#1e4038"/>
+  <rect x="48" y="88" width="14" height="12" fill="#1e4038"/>
+  <rect x="70" y="88" width="14" height="12" fill="#1e4038"/>
+  <rect x="90" y="84" width="14" height="14" fill="#1e4038"/>
+  <rect x="26" y="94" width="16" height="6" fill="#d4a84a"/>
+  <rect x="46" y="96" width="16" height="6" fill="#d4a84a"/>
+  <rect x="68" y="96" width="16" height="6" fill="#d4a84a"/>
+  <rect x="88" y="94" width="16" height="6" fill="#d4a84a"/>
+  <!-- tail snake -->
+  <rect x="12" y="64" width="16" height="12" fill="#2d5a4a"/>
+  <rect x="8" y="56" width="12" height="12" fill="#3a7a62"/>
+  <rect x="8" y="48" width="8" height="12" fill="#1e4038"/>
+  <rect x="6" y="44" width="6" height="8" fill="#d4a84a"/>
 </svg>

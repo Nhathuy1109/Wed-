@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" shape-rendering="crispEdges">
+  <rect x="20" y="108" width="88" height="6" fill="#2a2a30" opacity=".2"/>
+  <!-- body -->
+  <rect x="24" y="48" width="72" height="36" fill="#f0ebe0"/>
+  <rect x="28" y="44" width="64" height="12" fill="#f8f4ec"/>
+  <!-- belly -->
+  <rect x="36" y="60" width="48" height="20" fill="#fffaf4"/>
+  <!-- stripes -->
+  <rect x="32" y="48" width="6" height="28" fill="#3a3a42"/>
+  <rect x="48" y="52" width="6" height="24" fill="#3a3a42"/>
+  <rect x="64" y="48" width="6" height="28" fill="#3a3a42"/>
+  <rect x="80" y="52" width="6" height="24" fill="#3a3a42"/>
+  <!-- head -->
+  <rect x="72" y="24" width="40" height="32" fill="#f0ebe0"/>
+  <rect x="76" y="20" width="32" height="12" fill="#f8f4ec"/>
+  <!-- ears -->
+  <rect x="76" y="12" width="12" height="14" fill="#f0ebe0"/>
+  <rect x="100" y="12" width="12" height="14" fill="#f0ebe0"/>
+  <rect x="80" y="16" width="6" height="8" fill="#e8a0a8"/>
+  <rect x="104" y="16" width="6" height="8" fill="#e8a0a8"/>
+  <!-- face stripes -->
+  <rect x="84" y="28" width="4" height="16" fill="#3a3a42"/>
+  <rect x="100" y="28" width="4" height="16" fill="#3a3a42"/>
+  <rect x="88" y="40" width="16" height="4" fill="#3a3a42"/>
+  <!-- eyes -->
+  <rect x="82" y="32" width="10" height="10" fill="#f4e8a0"/>
+  <rect x="98" y="32" width="10" height="10" fill="#f4e8a0"/>
+  <rect x="86" y="34" width="5" height="6" fill="#1a1a20"/>
+  <rect x="102" y="34" width="5" height="6" fill="#1a1a20"/>
+  <rect x="87" y="34" width="2" height="2" fill="#fff"/>
+  <rect x="103" y="34" width="2" height="2" fill="#fff"/>
+  <!-- nose -->
+  <rect x="92" y="44" width="8" height="6" fill="#e8a0a8"/>
+  <rect x="94" y="46" width="4" height="3" fill="#c07078"/>
+  <!-- muzzle -->
+  <rect x="88" y="48" width="16" height="8" fill="#fffaf4"/>
+  <!-- legs -->
+  <rect x="28" y="80" width="14" height="20" fill="#f0ebe0"/>
+  <rect x="48" y="84" width="14" height="16" fill="#f0ebe0"/>
+  <rect x="68" y="84" width="14" height="16" fill="#f0ebe0"/>
+  <rect x="88" y="80" width="14" height="20" fill="#f0ebe0"/>
+  <!-- paws -->
+  <rect x="26" y="96" width="16" height="8" fill="#e8e0d4"/>
+  <rect x="46" y="96" width="16" height="8" fill="#e8e0d4"/>
+  <rect x="66" y="96" width="16" height="8" fill="#e8e0d4"/>
+  <rect x="86" y="96" width="16" height="8" fill="#e8e0d4"/>
+  <!-- claws gold -->
+  <rect x="26" y="100" width="4" height="4" fill="#d4a84a"/>
+  <rect x="38" y="100" width="4" height="4" fill="#d4a84a"/>
+  <rect x="46" y="100" width="4" height="4" fill="#d4a84a"/>
+  <rect x="58" y="100" width="4" height="4" fill="#d4a84a"/>
+  <!-- tail -->
+  <rect x="8" y="56" width="20" height="12" fill="#f0ebe0"/>
+  <rect x="4" y="48" width="12" height="12" fill="#f8f4ec"/>
+  <rect x="4" y="40" width="8" height="12" fill="#3a3a42"/>
+  <rect x="2" y="36" width="6" height="8" fill="#f0ebe0"/>
+</svg>
