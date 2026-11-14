@@ -33,7 +33,7 @@ import { signOut } from "@/lib/auth/client";
 import { hasGateSessionMarker } from "@/lib/auth/gate-session-marker";
 import { LIBRARY_NOTICE_KEY } from "@/components/library/auth-screen";
 import { LeaderboardList } from "@/components/library/leaderboard";
-import { SpiritGarden } from "@/components/spirit-garden";
+import { SpiritSection } from "@/components/spirit-garden";
 import { WordQuizTab } from "@/components/library/word-quiz-tab";
 import { OfficePreview, officeKind } from "@/components/library/office-preview";
 import {
@@ -1342,16 +1342,7 @@ function HomeTab({
         <StatTile value={totalDocs} label="tài liệu" tone="blue" />
         <StatTile value={totalQuizzes} label="đề thực hành" tone="pink" />
       </div>
-      <section className="creature-gallery dashboard-section" aria-labelledby="creature-gallery-title">
-        <div className="creature-gallery-heading mb-3">
-          <div>
-            <h2 id="creature-gallery-title" className="text-lg font-extrabold tracking-tight">Linh thú đồng hành</h2>
-            <p className="text-xs text-muted">Chọn linh thú — nó sẽ đi vòng trên sân. Tứ Linh đã vẽ lại + bộ pixel mới.</p>
-          </div>
-          <span aria-hidden="true" className="text-xl text-accent">✦</span>
-        </div>
-        <SpiritGarden compact />
-      </section>
+      <SpiritSection />
       <div className="dashboard-section">
         <SectionTitle>Mới thêm <span aria-hidden="true">🌷</span></SectionTitle>
         {recent.length ? (

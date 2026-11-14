@@ -123,3 +123,60 @@ export function SpiritGarden({ compact = false }: { compact?: boolean }) {
     </div>
   );
 }
+
+const COLLAPSE_KEY = "linh-thu-thu-gon";
+
+/** Khu "Linh thú đồng hành" có nút thu gọn / mở rộng. */
+export function SpiritSection() {
+  const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(COLLAPSE_KEY) === "1") setOpen(false);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    try {
+      localStorage.setItem(COLLAPSE_KEY, next ? "0" : "1");
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return (
+    <section className="creature-gallery dashboard-section" aria-labelledby="creature-gallery-title">
+      <div className="creature-gallery-heading mb-3">
+        <div>
+          <h2 id="creature-gallery-title" className="text-lg font-extrabold tracking-tight">
+            Linh thú đồng hành
+          </h2>
+          {open ? (
+            <p className="text-xs text-muted">
+              Chọn linh thú — nó sẽ đi vòng trên sân. Tứ Linh đã vẽ lại + bộ pixel mới.
+            </p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-controls="creature-gallery-body"
+          className="flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 text-sm font-semibold text-accent"
+        >
+          <span aria-hidden="true">{open ? "▲" : "▼"}</span>
+          {open ? "Thu gọn" : "Mở rộng"}
+        </button>
+      </div>
+      {open ? (
+        <div id="creature-gallery-body">
+          <SpiritGarden compact />
+        </div>
+      ) : null}
+    </section>
+  );
+}
