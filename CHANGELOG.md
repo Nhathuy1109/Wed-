@@ -13,3 +13,13 @@
 - src/lib/library/ids.ts, src/lib/library/api.ts
 - src/components/library/library-app.tsx, leaderboard.tsx, ui.tsx
 - README.md, CHANGELOG.md
+
+## Pixel Fantasy World — 2026-11-14
+
+- Trang chủ được nâng cấp thành thế giới pixel fantasy có bình minh, ban ngày, hoàng hôn và ban đêm.
+- Thêm bảng màu, năm kiểu môi trường sống, năm vật trang trí và tùy chọn bật/tắt hoạt ảnh.
+- Bộ sưu tập đạt 34 linh thú; bổ sung T-Rex, Stegosaurus và Rồng phương Tây.
+- Mỗi linh thú có hồ sơ tính cách, nguyên tố, môi trường yêu thích và độ hiếm.
+- Khu vườn hỗ trợ chọn linh thú, đồng bộ với trang chủ và chăm sóc có bộ đếm lưu cục bộ.
+- Tinh chỉnh thanh điều hướng và thay khung tải ban đầu bằng màn mở cổng pixel.
+- Chi tiết hướng dẫn nằm trong `UPGRADE-NOTES.md`.
