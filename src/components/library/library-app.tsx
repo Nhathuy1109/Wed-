@@ -34,6 +34,7 @@ import { hasGateSessionMarker } from "@/lib/auth/gate-session-marker";
 import { LIBRARY_NOTICE_KEY } from "@/components/library/auth-screen";
 import { LeaderboardList } from "@/components/library/leaderboard";
 import { SpiritSection } from "@/components/spirit-garden";
+import { PixelLoadingScreen, PixelWorld } from "@/components/pixel-world";
 import { WordQuizTab } from "@/components/library/word-quiz-tab";
 import { OfficePreview, officeKind } from "@/components/library/office-preview";
 import {
@@ -42,7 +43,6 @@ import {
   EmptyState,
   FileIcon,
   Skeleton,
-  SkeletonGrid,
   SkeletonList,
   Switch,
   ThemePicker,
@@ -920,7 +920,7 @@ export function LibraryApp() {
         </div>
       </header>
       <main className="has-bottom-nav page-shell mx-auto w-full max-w-5xl px-4 py-6 sm:py-8">
-        {loading ? <SkeletonGrid items={4} /> : null}
+        {loading ? <PixelLoadingScreen /> : null}
         {error ? <p className="rounded-2xl bg-danger-bg px-4 py-3 text-sm text-danger">{error}</p> : null}
         {notice ? (
           <p role="status" className="mb-4 rounded-2xl bg-blue px-4 py-3 text-sm text-fg">
@@ -1297,28 +1297,7 @@ function HomeTab({
 
   return (
     <section className="home-dashboard space-y-7">
-      <div className="welcome-hero relative overflow-hidden rounded-[2rem] p-5 sm:p-8">
-        <span className="pixel-cloud cloud-one" aria-hidden="true">✧</span>
-        <span className="pixel-cloud cloud-two" aria-hidden="true">✦</span>
-        <div className="hero-decor" aria-hidden="true">
-          <img src="/mascots/pixel-moon.svg" alt="" />
-          <img src="/mascots/pixel-crystal.svg" alt="" />
-          <img src="/mascots/pixel-mushroom.svg" alt="" />
-        </div>
-        <div className="relative z-10 max-w-xl">
-          <span className="hero-kicker">✦ PIXEL FANTASY LIBRARY ✦</span>
-          <h1 className="mt-3 text-3xl leading-tight font-black tracking-tight sm:text-4xl">Xin chào{me ? `, ${me.displayName}` : " bạn"}! <span aria-hidden="true">✧</span></h1>
-          <p className="mt-2 max-w-md text-sm leading-6 text-muted sm:text-base">Mở cánh cổng tri thức, gom góp tài liệu và khám phá thế giới nhiệm màu cùng những linh thú pixel.</p>
-          <div className="mt-5 inline-flex items-center gap-2 rounded-lg border border-white/80 bg-white/75 px-4 py-2 text-sm font-bold text-accent shadow-sm">
-            <span aria-hidden="true">✦</span> Mỗi trang sách là một chuyến phiêu lưu!
-          </div>
-        </div>
-        <div className="hero-mascot" aria-hidden="true">
-          <img className="pixel-animal pixel-phoenix" src="/mascots/pixel-chu-tuoc.gif" alt="" />
-          <img className="pixel-animal pixel-dragon" src="/mascots/pixel-thanh-long.gif" alt="" />
-          <img className="pixel-animal pixel-slime-hero" src="/mascots/pixel-bach-ho.gif" alt="" />
-        </div>
-      </div>
+      <PixelWorld displayName={me?.displayName ?? "Nhà thám hiểm"} />
       {notices.length ? (
         <div role="status" className="rounded-2xl border border-pink-deep bg-pink px-4 py-3">
           <p className="font-semibold">Thông báo</p>

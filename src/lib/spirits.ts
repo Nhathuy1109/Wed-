@@ -248,6 +248,42 @@ export const spirits: Spirit[] = [
     src: "/mascots/pixel-dragon.svg",
   },
   {
+    id: "triceratops",
+    name: "Triceratops",
+    trait: "Khủng long ba sừng — điềm tĩnh, kiên định và thích khám phá rừng cổ đại.",
+    group: "cool",
+    gait: "prowl",
+    lift: false,
+    src: "/mascots/pixel-triceratops.svg",
+  },
+  {
+    id: "t-rex",
+    name: "T-Rex",
+    trait: "Khủng long bạo chúa — mạnh mẽ, tò mò và luôn tràn đầy năng lượng.",
+    group: "cool",
+    gait: "prowl",
+    lift: false,
+    src: "/mascots/pixel-t-rex.svg",
+  },
+  {
+    id: "stegosaurus",
+    name: "Stegosaurus",
+    trait: "Khủng long lưng gai — hiền hòa, chậm rãi và thích những nơi yên tĩnh.",
+    group: "cool",
+    gait: "waddle",
+    lift: false,
+    src: "/mascots/pixel-stegosaurus.svg",
+  },
+  {
+    id: "western-dragon",
+    name: "Rồng phương Tây",
+    trait: "Rồng cánh lớn — độc lập, gan dạ và thích ngắm thế giới từ trên cao.",
+    group: "cool",
+    gait: "glide",
+    lift: true,
+    src: "/mascots/pixel-dragon-west.svg",
+  },
+  {
     id: "phoenix",
     name: "Phượng lửa",
     trait: "Sải cánh lướt nhẹ trên trang.",
@@ -295,3 +331,83 @@ export const spirits: Spirit[] = [
 ];
 
 export const SPIRIT_KEY = "linh-thu-chon";
+
+
+export type SpiritProfile = {
+  personality: string;
+  element: string;
+  habitat: string;
+  rarity: string;
+};
+
+const SPIRIT_PROFILES: Record<string, SpiritProfile> = {
+  "thanh-long": { personality: "Điềm tĩnh, can đảm, thích dẫn đường.", element: "Mộc · Gió", habitat: "Rừng cổ", rarity: "Huyền thoại" },
+  "huyen-vu": { personality: "Kiên nhẫn, trầm ổn, luôn bảo vệ bạn bè.", element: "Thủy · Đất", habitat: "Hồ băng", rarity: "Huyền thoại" },
+  "chu-tuoc": { personality: "Nhiệt thành, lạc quan, không ngại bắt đầu lại.", element: "Hỏa", habitat: "Đỉnh núi lửa", rarity: "Huyền thoại" },
+  "bach-ho": { personality: "Quyết đoán, trung thành, thích thử thách.", element: "Kim", habitat: "Núi đá", rarity: "Huyền thoại" },
+  owl: { personality: "Thông thái, quan sát kỹ, thích yên tĩnh.", element: "Phong", habitat: "Tháp thư viện", rarity: "Hiếm" },
+  fox: { personality: "Nhanh trí, tinh nghịch, thích khám phá.", element: "Băng", habitat: "Rừng tuyết", rarity: "Thường" },
+  penguin: { personality: "Thân thiện, vui vẻ, thích đi theo nhóm.", element: "Băng · Thủy", habitat: "Bờ biển lạnh", rarity: "Thường" },
+  jelly: { personality: "Dịu dàng, tò mò, thích ánh sáng dịu.", element: "Thủy", habitat: "Vịnh phát quang", rarity: "Hiếm" },
+  sheep: { personality: "Hiền lành, ấm áp, thích nghỉ ngơi.", element: "Mây", habitat: "Đồng cỏ", rarity: "Thường" },
+  tiger: { personality: "Mạnh mẽ, thẳng thắn, luôn cảnh giác.", element: "Lôi", habitat: "Rừng sâu", rarity: "Hiếm" },
+  panther: { personality: "Bí ẩn, độc lập, di chuyển rất khẽ.", element: "Bóng tối", habitat: "Rừng đêm", rarity: "Sử thi" },
+  wolf: { personality: "Trung thành, bền bỉ, coi trọng đồng đội.", element: "Băng · Phong", habitat: "Thung lũng sao", rarity: "Hiếm" },
+  crane: { personality: "Thanh nhã, điềm đạm, thích tự do.", element: "Phong", habitat: "Đầm mây", rarity: "Hiếm" },
+  huli: { personality: "Lém lỉnh, duyên dáng, hơi kiêu kỳ.", element: "Linh hỏa", habitat: "Rừng trăng", rarity: "Sử thi" },
+  koi: { personality: "Lạc quan, mềm mại, thích dòng chảy mới.", element: "Thủy", habitat: "Hồ mây", rarity: "Hiếm" },
+  seadragon: { personality: "Tò mò, bền bỉ, thích len lỏi khám phá.", element: "Thủy · Mộc", habitat: "Rạn san hô", rarity: "Hiếm" },
+  deer: { personality: "Nhẹ nhàng, cảnh giác, yêu thiên nhiên.", element: "Mộc", habitat: "Rừng sao", rarity: "Sử thi" },
+  qilin: { personality: "Nhân hậu, công bằng, mang lại may mắn.", element: "Đất · Lửa", habitat: "Thung lũng linh khí", rarity: "Sử thi" },
+  bunny: { personality: "Năng động, nhút nhát, thích những trò nhỏ.", element: "Mộc", habitat: "Vườn hoa", rarity: "Thường" },
+  cat: { personality: "Độc lập, tò mò, thích chọn nhịp riêng.", element: "Nguyệt", habitat: "Mái nhà ấm", rarity: "Thường" },
+  panda: { personality: "Điềm đạm, thân thiện, yêu sự thoải mái.", element: "Đất", habitat: "Rừng trúc", rarity: "Thường" },
+  slime: { personality: "Hồn nhiên, vui tính, dễ kết bạn.", element: "Thạch", habitat: "Suối phép", rarity: "Thường" },
+  "night-cat": { personality: "Lặng lẽ, tinh ý, thích màn đêm.", element: "Bóng tối", habitat: "Rừng đêm", rarity: "Hiếm" },
+  lion: { personality: "Đĩnh đạc, quả cảm, có tinh thần thủ lĩnh.", element: "Nắng", habitat: "Thảo nguyên", rarity: "Hiếm" },
+  dragon: { personality: "Hiếu kỳ, tự tin, thích thử sức đôi cánh.", element: "Hỏa · Phong", habitat: "Hang pha lê", rarity: "Sử thi" },
+  triceratops: { personality: "Điềm tĩnh, kiên định, luôn bảo vệ bạn bè.", element: "Đất", habitat: "Rừng cổ đại", rarity: "Hiếm" },
+  "t-rex": { personality: "Gan dạ, hiếu động, thích dẫn đầu chuyến đi.", element: "Hỏa · Đất", habitat: "Thung lũng cổ", rarity: "Sử thi" },
+  stegosaurus: { personality: "Hiền hòa, chậm rãi, yêu nhịp sống bình yên.", element: "Mộc · Đất", habitat: "Đồng dương xỉ", rarity: "Hiếm" },
+  "western-dragon": { personality: "Độc lập, kiêu hãnh, thích bay thật cao.", element: "Hỏa · Phong", habitat: "Đỉnh núi mây", rarity: "Huyền thoại" },
+  phoenix: { personality: "Rực rỡ, lạc quan, luôn truyền cảm hứng.", element: "Hỏa", habitat: "Đỉnh bình minh", rarity: "Huyền thoại" },
+  unicorn: { personality: "Tinh tế, dịu dàng, tin vào điều tốt đẹp.", element: "Ánh sáng", habitat: "Đồng cỏ cầu vồng", rarity: "Sử thi" },
+  moon: { personality: "Trầm lặng, mộng mơ, thích ngắm trời đêm.", element: "Nguyệt", habitat: "Bầu trời đêm", rarity: "Hiếm" },
+  crystal: { personality: "Tĩnh tại, trong sáng, thích lưu giữ ký ức.", element: "Pha lê", habitat: "Hang tinh thể", rarity: "Hiếm" },
+  mushroom: { personality: "Vui vẻ, hiếu khách, thích nơi ẩm mát.", element: "Mộc", habitat: "Rừng nấm", rarity: "Thường" },
+};
+
+export function getSpiritProfile(spirit: Spirit): SpiritProfile {
+  return SPIRIT_PROFILES[spirit.id] ?? {
+    personality: "Thân thiện, tò mò và thích khám phá.",
+    element: "Tự nhiên",
+    habitat: "Vùng đất Mochi",
+    rarity: spirit.group === "myth" ? "Huyền thoại" : "Thường",
+  };
+}
+
+export const WORLD_PREFS_KEY = "mochi-pixel-world-v1";
+export const SPIRIT_CARE_KEY = "mochi-spirit-pets";
+export const SPIRIT_CHANGE_EVENT = "mochi-spirit-change";
+export const SPIRIT_CARE_EVENT = "mochi-spirit-care";
+export const WORLD_CHANGE_EVENT = "mochi-world-change";
+
+export function readSpiritCareCount(): number {
+  try {
+    const value = Number(localStorage.getItem(SPIRIT_CARE_KEY) ?? 0);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function addSpiritCare(): number {
+  const next = readSpiritCareCount() + 1;
+  try {
+    localStorage.setItem(SPIRIT_CARE_KEY, String(next));
+  } catch {
+    /* Keep the interaction available for this session. */
+  }
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent<number>(SPIRIT_CARE_EVENT, { detail: next }));
+  return next;
+}
