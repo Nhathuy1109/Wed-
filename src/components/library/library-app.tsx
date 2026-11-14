@@ -1,26 +1,39 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import {
   ArrowLeft,
   BookOpen,
+  ChevronRight,
   ClipboardCheck,
+  ClipboardList,
   Download,
-  Flag,
+  FolderOpen,
   LogOut,
-  Pin,
-  PinOff,
   Plus,
   Search,
+  SearchX,
   Share2,
   Shield,
   Trash2,
   Upload,
   Users,
 } from "lucide-react";
-import { useSyncExternalStore } from "react";
 import { signOut } from "@/lib/auth/client";
 import { hasGateSessionMarker } from "@/lib/auth/gate-session-marker";
 import { LIBRARY_NOTICE_KEY } from "@/components/library/auth-screen";
-import { OfficePreview, officeKind } from "@/components/library/office-preview";
+import { LeaderboardList } from "@/components/library/leaderboard";
+import {
+  Avatar,
+  BottomNav,
+  EmptyState,
+  FileIcon,
+  Skeleton,
+  SkeletonGrid,
+  SkeletonList,
+  Switch,
+  ThemePicker,
+  kindLabel,
+  type TabId,
+} from "@/components/library/ui";
 import {
   ackNotices,
   addComment,
@@ -31,53 +44,43 @@ import {
   deleteDocument,
   deleteSubject,
   listComments,
-  listLeaderboard,
-  listReports,
   listNotices,
   listParticipants,
   listPeople,
   listReview,
   loadLibrary,
-  loadWrong,
-  myHistory,
-  quizStats,
+  myStats,
   readDocument,
   readSubmission,
-  resolveReport,
   resetUserPassword,
   reviewSubmission,
+  setAnonymous,
   setBlock,
   submitDocument,
-  submitReport,
-  submitScore,
   trackUse,
   userActivity,
 } from "@/lib/library/api";
 import {
   FRESH_VISIT_KEY,
+  fileKind,
+  formatBytes,
   MAX_FILE_BYTES,
   NOTICE_CACHE_KEY,
   SECTIONS,
   sectionById,
   type CommentItem,
   type FileMeta,
-  type HistoryItem,
-  type LeaderboardChapter,
   type LibraryNotice,
   type Member,
   type MySubmission,
+  type MyStats,
   type Participant,
   type Person,
-  type QuizStat,
-  type ReportItem,
   type ReviewItem,
   type SectionId,
   type Subject,
   type UserStats,
-  type WrongQuestion,
 } from "@/lib/library/ids";
-import { REVIEW_CHAPTER, withQuizHook } from "@/lib/library/quiz-hook";
-import { loadPins, loadRecent, loadSeen, saveRecent, savePins, saveSeen, type SeenState } from "@/lib/library/personal";
 
 const subscribeNone = () => () => {};
 
@@ -89,7 +92,9 @@ type Viewer =
   | { kind: "practice"; id: string; name: string; html: string }
   | { kind: "file"; id: string; name: string; url: string; mime: string };
 
-type FileEntry = { file: FileMeta; subject: Subject };
+type Panel = "users" | "share" | "review" | "info";
+
+type SearchHit = { key: string; title: string; meta: string; icon: ReactNode; open: () => void };
 
 function countFiles(subject: Subject): number {
   return subject.files.theory.length + subject.files.quizfile.length + subject.files.practice.length;
@@ -103,6 +108,11 @@ function statusLabel(status: MySubmission["status"]): string {
   if (status === "pending") return "Đang chờ duyệt";
   if (status === "approved") return "Đã công khai";
   return "Không được duyệt";
+}
+
+function dateValue(created: string): number {
+  const [d, m, y] = created.split("/").map(Number);
+  return Number.isFinite(d) && Number.isFinite(m) && Number.isFinite(y) ? Date.UTC(y, m - 1, d) : 0;
 }
 
 function readCachedNotices(): LibraryNotice[] {
@@ -133,22 +143,16 @@ export function LibraryApp() {
   const [mySubmissions, setMySubmissions] = useState<MySubmission[]>([]);
   const [pendingReviews, setPendingReviews] = useState(0);
   const [resetRequests, setResetRequests] = useState(0);
-  const [openReports, setOpenReports] = useState(0);
-  const [quizOpen, setQuizOpen] = useState(false);
-  const [pins, setPins] = useState<string[]>([]);
-  const [recents, setRecents] = useState<string[]>([]);
-  const [seen, setSeen] = useState<SeenState>({ baseline: Date.now(), subjects: {} });
-  const [newSince, setNewSince] = useState(Number.POSITIVE_INFINITY);
   const [notices, setNotices] = useState<LibraryNotice[]>(readCachedNotices);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<TabId>("home");
+  const [practiceView, setPracticeView] = useState<"quizzes" | "rank">("quizzes");
+  const [rankVersion, setRankVersion] = useState(0);
   const [subjectId, setSubjectId] = useState<string | null>(null);
   const [section, setSection] = useState<SectionId>("theory");
-  const [usersOpen, setUsersOpen] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
-  const [reviewOpen, setReviewOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
+  const [panel, setPanel] = useState<Panel | null>(null);
   const [viewer, setViewer] = useState<Viewer | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -160,7 +164,6 @@ export function LibraryApp() {
     setMySubmissions(result.data.mySubmissions);
     setPendingReviews(result.data.pendingReviews);
     setResetRequests(result.data.resetRequests);
-    setOpenReports(result.data.openReports);
   }
 
   async function reload() {
@@ -200,12 +203,7 @@ export function LibraryApp() {
           setError(result.message);
           return;
         }
-        setMe(result.data.me);
-        setSubjects(result.data.subjects);
-        setMySubmissions(result.data.mySubmissions);
-        setPendingReviews(result.data.pendingReviews);
-        setResetRequests(result.data.resetRequests);
-        setOpenReports(result.data.openReports);
+        remember(result);
       })
       .catch(() => {
         if (alive) setError("Không tải được thư viện.");
@@ -216,6 +214,7 @@ export function LibraryApp() {
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gate]);
 
   useEffect(() => {
@@ -245,105 +244,60 @@ export function LibraryApp() {
     };
   }, []);
 
-  function goHome() {
-    setSubjectId(null);
-    setUsersOpen(false);
-    setShareOpen(false);
-    setReviewOpen(false);
-    setInfoOpen(false);
-    setQuizOpen(false);
+  function scrollTop() {
+    if (typeof window !== "undefined") window.scrollTo({ top: 0 });
+  }
+
+  /** Chạm vào tab: về màn gốc của tab đó (đóng môn, đề đang mở, bảng quản lý). */
+  function selectTab(next: TabId) {
+    setTab(next);
+    setPanel(null);
     setViewer(null);
     setQuery("");
+    setNotice("");
+    setSubjectId(null);
+    scrollTop();
   }
 
-  const panelOpen = usersOpen || shareOpen || reviewOpen || infoOpen || quizOpen;
-
-  const username = me?.username ?? "";
-
-  // Nạp dữ liệu cá nhân (ghim, xem gần đây, môn đã xem) khi biết tài khoản.
-  useEffect(() => {
-    if (!username) return;
-    setPins(loadPins(username));
-    setRecents(loadRecent(username));
-    setSeen(loadSeen(username));
-  }, [username]);
-
-  // Mở môn: nhớ mốc cũ để gắn nhãn "Mới", rồi đánh dấu môn này đã xem.
-  useEffect(() => {
-    if (!username || !subjectId) return;
-    const stored = loadSeen(username);
-    setNewSince(stored.subjects[subjectId] ?? stored.baseline);
-    const next = { ...stored, subjects: { ...stored.subjects, [subjectId]: Date.now() } };
-    saveSeen(username, next);
-    setSeen(next);
-  }, [username, subjectId]);
-
-  // Chủ web vừa tải file lên khi đang ở trong môn: không tự chấm đỏ file của mình.
-  useEffect(() => {
-    if (!username || !subjectId) return;
-    const stored = loadSeen(username);
-    const next = { ...stored, subjects: { ...stored.subjects, [subjectId]: Date.now() } };
-    saveSeen(username, next);
-    setSeen(next);
-  }, [subjects, username, subjectId]);
-
-  const fileIndex = useMemo(() => {
-    const map = new Map<string, FileEntry>();
-    for (const item of subjects) {
-      for (const group of SECTIONS) {
-        for (const file of item.files[group.id]) map.set(file.id, { file, subject: item });
-      }
-    }
-    return map;
-  }, [subjects]);
-  const pinnedItems = useMemo(
-    () => pins.map((id) => fileIndex.get(id)).filter((entry): entry is FileEntry => Boolean(entry)),
-    [pins, fileIndex],
-  );
-  const recentItems = useMemo(
-    () => recents.map((id) => fileIndex.get(id)).filter((entry): entry is FileEntry => Boolean(entry)).slice(0, 6),
-    [recents, fileIndex],
-  );
-
-  function subjectHasNew(item: Subject): boolean {
-    const since = seen.subjects[item.id] ?? seen.baseline;
-    return SECTIONS.some((group) => item.files[group.id].some((file) => file.createdAt > since));
+  function openSubject(id: string, nextSection?: SectionId) {
+    setTab("subjects");
+    setPanel(null);
+    setViewer(null);
+    setQuery("");
+    setSubjectId(id);
+    if (nextSection) setSection(nextSection);
+    scrollTop();
   }
 
-  function togglePin(id: string) {
-    const next = pins.includes(id) ? pins.filter((value) => value !== id) : [id, ...pins].slice(0, 30);
-    setPins(next);
-    if (username) savePins(username, next);
-  }
-
-  function rememberRecent(id: string) {
-    const next = [id, ...recents.filter((value) => value !== id)].slice(0, 12);
-    setRecents(next);
-    if (username) saveRecent(username, next);
+  function openPanel(next: Panel) {
+    setTab("me");
+    setViewer(null);
+    setQuery("");
+    setSubjectId(null);
+    setPanel(next);
+    if (next === "share") void reload();
+    scrollTop();
   }
 
   const subject = subjects.find((item) => item.id === subjectId) ?? null;
   const owner = me?.role === "owner";
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return [];
-    const hits: { key: string; title: string; meta: string; open: () => void }[] = [];
+    const hits: SearchHit[] = [];
     for (const item of subjects) {
       if (item.name.toLowerCase().includes(needle)) {
         hits.push({
           key: `s-${item.id}`,
           title: item.name,
           meta: "Môn học",
-          open: () => {
-            setUsersOpen(false);
-            setShareOpen(false);
-            setReviewOpen(false);
-            setInfoOpen(false);
-    setQuizOpen(false);
-            setViewer(null);
-            setSubjectId(item.id);
-            setQuery("");
-          },
+          icon: (
+            <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-blue text-accent-2">
+              <BookOpen aria-hidden="true" className="size-5" />
+            </span>
+          ),
+          open: () => openSubject(item.id),
         });
       }
       for (const group of SECTIONS) {
@@ -353,47 +307,15 @@ export function LibraryApp() {
             key: file.id,
             title: file.name,
             meta: `${item.name} · ${group.label}`,
-            open: () => {
-              setUsersOpen(false);
-              setShareOpen(false);
-              setReviewOpen(false);
-              setInfoOpen(false);
-    setQuizOpen(false);
-              setViewer(null);
-              setSubjectId(item.id);
-              setSection(group.id);
-              setQuery("");
-            },
+            icon: <FileIcon name={file.name} mime={file.mime} section={file.section} />,
+            open: () => openSubject(item.id, group.id),
           });
         }
       }
     }
     return hits;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, subjects]);
-
-  function openFile(file: FileMeta) {
-    return run(async () => {
-      const result = await readDocument({ data: { id: file.id } });
-      if (!result.ok) {
-        setNotice(result.message);
-        return;
-      }
-      rememberRecent(file.id);
-      if (result.data.section === "practice") {
-        setViewer({ kind: "practice", id: file.id, name: result.data.name, html: result.data.body });
-        void trackUse({ data: { id: file.id, kind: "attempt" } });
-        return;
-      }
-      const blob = await (await fetch(result.data.body)).blob();
-      setViewer({
-        kind: "file",
-        id: file.id,
-        name: result.data.name,
-        mime: result.data.mime || blob.type,
-        url: URL.createObjectURL(blob),
-      });
-    });
-  }
 
   async function run(action: () => Promise<void>) {
     if (busy) return;
@@ -408,43 +330,83 @@ export function LibraryApp() {
     }
   }
 
+  function openFile(file: FileMeta) {
+    return run(async () => {
+      const result = await readDocument({ data: { id: file.id } });
+      if (!result.ok) {
+        setNotice(result.message);
+        return;
+      }
+      if (result.data.section === "practice") {
+        setViewer({ kind: "practice", id: file.id, name: result.data.name, html: result.data.body });
+        void trackUse({ data: { id: file.id, kind: "attempt" } });
+        scrollTop();
+        return;
+      }
+      const blob = await (await fetch(result.data.body)).blob();
+      setViewer({
+        kind: "file",
+        id: file.id,
+        name: result.data.name,
+        mime: result.data.mime || blob.type,
+        url: URL.createObjectURL(blob),
+      });
+      scrollTop();
+    });
+  }
+
+  function downloadFile(file: FileMeta) {
+    return run(async () => {
+      const result = await readDocument({ data: { id: file.id } });
+      if (!result.ok) {
+        setNotice(result.message);
+        return;
+      }
+      const href =
+        result.data.section === "practice"
+          ? URL.createObjectURL(new Blob([result.data.body], { type: "text/html" }))
+          : result.data.body;
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = result.data.name;
+      link.click();
+      void trackUse({ data: { id: file.id, kind: "download" } });
+    });
+  }
+
+  function toggleAnonymous(next: boolean) {
+    void run(async () => {
+      const result = await setAnonymous({ data: { anonymous: next } });
+      if (!result.ok) {
+        setNotice(result.message);
+        return;
+      }
+      setMe((current) => (current ? { ...current, anonymous: result.data.anonymous } : current));
+      setRankVersion((value) => value + 1);
+      setNotice(
+        next
+          ? "Đã bật ẩn danh. Người khác chỉ thấy “Ẩn danh” trên bảng xếp hạng."
+          : "Đã tắt ẩn danh. Tên bạn hiện lại trên bảng xếp hạng.",
+      );
+    });
+  }
+
+  const idle = !loading && !error && !query.trim() && !panel && !viewer;
+  const badges: Partial<Record<TabId, number>> = owner ? { me: pendingReviews + resetRequests } : {};
+
   return (
     <div className="min-h-screen bg-bg text-fg">
       <header className="border-b border-line bg-pink">
-        <div className="mx-auto flex max-w-4xl flex-col gap-3 px-4 py-4">
-          <div className="flex items-center justify-between gap-3">
-            <button
-              type="button"
-              className="flex items-center gap-3 text-left"
-              onClick={goHome}
-            >
-              <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface text-accent">
-                <BookOpen aria-hidden="true" className="size-5" />
-              </span>
-              <span>
-                <span className="block text-lg font-semibold leading-tight text-accent">Thư viện tài liệu</span>
-                <span className="block text-sm text-muted">{me ? me.displayName : "Đang tải"}</span>
-              </span>
-            </button>
-            {gate ? null : (
-              <button
-                type="button"
-                className="inline-flex h-11 items-center gap-2 rounded-full border border-pink-deep bg-surface px-4 text-sm font-semibold text-accent"
-                onClick={() => {
-                  try {
-                    sessionStorage.removeItem(NOTICE_CACHE_KEY);
-                    sessionStorage.removeItem(FRESH_VISIT_KEY);
-                  } catch {
-                    /* ignore */
-                  }
-                  void signOut("/login");
-                }}
-              >
-                <LogOut aria-hidden="true" className="size-4" />
-                Đăng xuất
-              </button>
-            )}
-          </div>
+        <div className="mx-auto flex max-w-4xl flex-col gap-3 px-4 pt-3 pb-3">
+          <button type="button" className="flex items-center gap-3 text-left" onClick={() => selectTab("home")}>
+            <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-surface text-accent">
+              <BookOpen aria-hidden="true" className="size-5" />
+            </span>
+            <span>
+              <span className="block text-lg leading-tight font-semibold text-accent">Thư viện tài liệu</span>
+              <span className="block text-sm text-muted">{me ? me.displayName : "Đang tải"}</span>
+            </span>
+          </button>
           <label className="relative block">
             <Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" />
             <input
@@ -458,11 +420,15 @@ export function LibraryApp() {
           </label>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-4xl px-4 py-6 pb-16">
-        {loading ? <p className="text-sm text-muted">Đang tải tài liệu…</p> : null}
+      <main className="has-bottom-nav mx-auto w-full max-w-4xl px-4 py-5">
+        {loading ? <SkeletonGrid items={4} /> : null}
         {error ? <p className="rounded-2xl bg-danger-bg px-4 py-3 text-sm text-danger">{error}</p> : null}
-        {notice ? <p className="mb-4 rounded-2xl bg-blue px-4 py-3 text-sm text-fg">{notice}</p> : null}
-        {!loading && !error && me?.legacyEnabled ? (
+        {notice ? (
+          <p role="status" className="mb-4 rounded-2xl bg-blue px-4 py-3 text-sm text-fg">
+            {notice}
+          </p>
+        ) : null}
+        {!loading && !error && !query.trim() && !panel && !viewer && me?.legacyEnabled && tab === "me" ? (
           <PasswordBanner
             busy={busy}
             onSave={(password) =>
@@ -478,47 +444,16 @@ export function LibraryApp() {
             }
           />
         ) : null}
-        {!loading && !error && !query.trim() && !panelOpen && !viewer && !subject && notices.length ? (
-          <div role="status" className="mb-4 rounded-2xl border border-pink-deep bg-pink px-4 py-3">
-            <p className="font-semibold">Thông báo</p>
-            <ul className="mt-2 space-y-1 text-sm">
-              {notices.map((item) => (
-                <li key={item.id}>{item.message}</li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              className="mt-3 h-11 rounded-full bg-accent px-4 text-sm font-semibold text-on-accent"
-              onClick={() =>
-                run(async () => {
-                  const result = await ackNotices();
-                  if (!result.ok) {
-                    setNotice(result.message);
-                    return;
-                  }
-                  try {
-                    sessionStorage.removeItem(NOTICE_CACHE_KEY);
-                  } catch {
-                    /* ignore */
-                  }
-                  setNotices([]);
-                })
-              }
-            >
-              Đã xem
-            </button>
-          </div>
-        ) : null}
         {!loading && !error && query.trim() ? <SearchResults hits={filtered} /> : null}
-        {!loading && !error && !query.trim() && usersOpen && owner ? (
-          <PeoplePanel busy={busy} onBack={() => setUsersOpen(false)} onChanged={reload} setNotice={setNotice} run={run} />
+        {!loading && !error && !query.trim() && panel === "users" && owner ? (
+          <PeoplePanel busy={busy} onBack={() => setPanel(null)} onChanged={reload} setNotice={setNotice} run={run} />
         ) : null}
-        {!loading && !error && !query.trim() && shareOpen && !owner ? (
+        {!loading && !error && !query.trim() && panel === "share" && !owner ? (
           <SharePanel
             subjects={subjects}
             submissions={mySubmissions}
             busy={busy}
-            onBack={() => setShareOpen(false)}
+            onBack={() => setPanel(null)}
             onSubmit={(payload) =>
               run(async () => {
                 const result = await submitDocument({ data: payload });
@@ -532,33 +467,29 @@ export function LibraryApp() {
             }
           />
         ) : null}
-        {!loading && !error && !query.trim() && reviewOpen && owner ? (
-          <ReviewPanel
-            busy={busy}
-            onBack={() => setReviewOpen(false)}
-            onChanged={reload}
-            setNotice={setNotice}
-            run={run}
-          />
+        {!loading && !error && !query.trim() && panel === "review" && owner ? (
+          <ReviewPanel busy={busy} onBack={() => setPanel(null)} onChanged={reload} setNotice={setNotice} run={run} />
         ) : null}
-        {!loading && !error && !query.trim() && quizOpen && owner ? (
-          <QuizAdminPanel onBack={() => setQuizOpen(false)} onChanged={reload} />
+        {!loading && !error && !query.trim() && panel === "info" && owner ? (
+          <InfoPanel onBack={() => setPanel(null)} setNotice={setNotice} />
         ) : null}
-        {!loading && !error && !query.trim() && infoOpen && owner ? (
-          <InfoPanel onBack={() => setInfoOpen(false)} setNotice={setNotice} />
-        ) : null}
-        {!loading && !error && !query.trim() && !panelOpen && viewer?.kind === "practice" ? (
+        {!loading && !error && !query.trim() && !panel && viewer?.kind === "practice" ? (
           <section>
-            <button type="button" className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-accent-2" onClick={() => setViewer(null)}>
+            <button type="button" className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-accent-2" onClick={() => setViewer(null)}>
               <ArrowLeft aria-hidden="true" className="size-4" />
               Quay lại
             </button>
             <h1 className="mb-3 text-2xl font-semibold break-words">{viewer.name}</h1>
-            <PracticeRunner documentId={viewer.id} name={viewer.name} html={viewer.html} myUsername={me?.username ?? ""} />
+            <iframe
+              title={viewer.name}
+              sandbox="allow-scripts allow-forms allow-modals"
+              srcDoc={viewer.html}
+              className="h-[70vh] w-full rounded-2xl border border-line bg-white"
+            />
             <PracticeComments documentId={viewer.id} />
           </section>
         ) : null}
-        {!loading && !error && !query.trim() && !panelOpen && viewer?.kind === "file" ? (
+        {!loading && !error && !query.trim() && !panel && viewer?.kind === "file" ? (
           <FilePreview
             viewer={viewer}
             onBack={() => setViewer(null)}
@@ -567,7 +498,37 @@ export function LibraryApp() {
             }}
           />
         ) : null}
-        {!loading && !error && !query.trim() && !panelOpen && !viewer && subject ? (
+        {idle && tab === "home" ? (
+          <HomeTab
+            me={me}
+            subjects={subjects}
+            notices={notices}
+            busy={busy}
+            rankVersion={rankVersion}
+            onOpenSubject={openSubject}
+            onSeeRanking={() => {
+              setPracticeView("rank");
+              selectTab("practice");
+            }}
+            onSeeSubjects={() => selectTab("subjects")}
+            onAck={() =>
+              run(async () => {
+                const result = await ackNotices();
+                if (!result.ok) {
+                  setNotice(result.message);
+                  return;
+                }
+                try {
+                  sessionStorage.removeItem(NOTICE_CACHE_KEY);
+                } catch {
+                  /* ignore */
+                }
+                setNotices([]);
+              })
+            }
+          />
+        ) : null}
+        {idle && tab === "subjects" && subject ? (
           <SubjectView
             subject={subject}
             section={section}
@@ -576,27 +537,7 @@ export function LibraryApp() {
             onBack={() => setSubjectId(null)}
             onSection={setSection}
             onOpen={openFile}
-            newSince={newSince}
-            pinned={pins}
-            onTogglePin={togglePin}
-            onDownload={(file) =>
-              run(async () => {
-                const result = await readDocument({ data: { id: file.id } });
-                if (!result.ok) {
-                  setNotice(result.message);
-                  return;
-                }
-                const href =
-                  result.data.section === "practice"
-                    ? URL.createObjectURL(new Blob([result.data.body], { type: "text/html" }))
-                    : result.data.body;
-                const link = document.createElement("a");
-                link.href = href;
-                link.download = result.data.name;
-                link.click();
-                void trackUse({ data: { id: file.id, kind: "download" } });
-              })
-            }
+            onDownload={downloadFile}
             onDeleteSubject={() =>
               run(async () => {
                 const result = await deleteSubject({ data: { id: subject.id } });
@@ -651,49 +592,12 @@ export function LibraryApp() {
             }
           />
         ) : null}
-        {!loading && !error && !query.trim() && !panelOpen && !viewer && !subject ? (
-          <Home
+        {idle && tab === "subjects" && !subject ? (
+          <SubjectsTab
             subjects={subjects}
             owner={Boolean(owner)}
-            previewOwner={Boolean(me?.previewOwner)}
             busy={busy}
-            pendingReviews={pendingReviews}
-            resetRequests={resetRequests}
-            openReports={openReports}
-            submissions={mySubmissions}
-            pinned={pinnedItems}
-            recent={recentItems}
-            isNew={subjectHasNew}
-            onOpenFile={(file) => void openFile(file)}
-            onQuiz={() => {
-              goHome();
-              setQuizOpen(true);
-            }}
-            onOpen={(id) => {
-              setUsersOpen(false);
-              setShareOpen(false);
-              setReviewOpen(false);
-              setInfoOpen(false);
-    setQuizOpen(false);
-              setSubjectId(id);
-            }}
-            onUsers={() => {
-              goHome();
-              setUsersOpen(true);
-            }}
-            onShare={() => {
-              goHome();
-              setShareOpen(true);
-              void reload();
-            }}
-            onReview={() => {
-              goHome();
-              setReviewOpen(true);
-            }}
-            onInfo={() => {
-              goHome();
-              setInfoOpen(true);
-            }}
+            onOpen={(id) => openSubject(id)}
             onAdd={(name) =>
               run(async () => {
                 const result = await addSubject({ data: { name } });
@@ -702,55 +606,188 @@ export function LibraryApp() {
                   return;
                 }
                 await reload();
-                setSubjectId(result.data.id);
+                openSubject(result.data.id);
               })
             }
           />
         ) : null}
+        {idle && tab === "practice" ? (
+          <PracticeTab
+            subjects={subjects}
+            view={practiceView}
+            onView={setPracticeView}
+            me={me}
+            busy={busy}
+            rankVersion={rankVersion}
+            onOpenQuiz={openFile}
+            onToggleAnonymous={toggleAnonymous}
+          />
+        ) : null}
+        {idle && tab === "me" ? (
+          <MeTab
+            me={me}
+            gate={gate}
+            busy={busy}
+            pendingReviews={pendingReviews}
+            resetRequests={resetRequests}
+            submissions={mySubmissions}
+            onOpenPanel={openPanel}
+            onToggleAnonymous={toggleAnonymous}
+          />
+        ) : null}
       </main>
+      <BottomNav active={tab} badges={badges} onChange={selectTab} />
     </div>
   );
 }
 
-function Home({
+function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="mb-3 flex items-center justify-between gap-3">
+      <h2 className="text-lg font-semibold">{children}</h2>
+      {action}
+    </div>
+  );
+}
+
+function StatTile({ value, label, tone }: { value: number | string; label: string; tone: "pink" | "blue" }) {
+  return (
+    <div className={`rounded-2xl px-3 py-3 text-center ${tone === "pink" ? "bg-pink" : "bg-blue"}`}>
+      <p className="text-2xl leading-none font-semibold">{value}</p>
+      <p className="mt-1 text-xs text-muted">{label}</p>
+    </div>
+  );
+}
+
+function HomeTab({
+  me,
+  subjects,
+  notices,
+  busy,
+  rankVersion,
+  onOpenSubject,
+  onSeeRanking,
+  onSeeSubjects,
+  onAck,
+}: {
+  me: Member | null;
+  subjects: Subject[];
+  notices: LibraryNotice[];
+  busy: boolean;
+  rankVersion: number;
+  onOpenSubject: (id: string, section?: SectionId) => void;
+  onSeeRanking: () => void;
+  onSeeSubjects: () => void;
+  onAck: () => void;
+}) {
+  const totalDocs = subjects.reduce((sum, item) => sum + countFiles(item), 0);
+  const totalQuizzes = subjects.reduce((sum, item) => sum + item.files.practice.length, 0);
+  const recent = useMemo(() => {
+    const items = subjects.flatMap((item) =>
+      SECTIONS.flatMap((group) =>
+        item.files[group.id].map((file, index) => ({ file, subject: item, index })),
+      ),
+    );
+    return items
+      .sort((a, b) => dateValue(b.file.created) - dateValue(a.file.created) || b.index - a.index)
+      .slice(0, 5);
+  }, [subjects]);
+
+  return (
+    <section className="space-y-6">
+      {notices.length ? (
+        <div role="status" className="rounded-2xl border border-pink-deep bg-pink px-4 py-3">
+          <p className="font-semibold">Thông báo</p>
+          <ul className="mt-2 space-y-1 text-sm">
+            {notices.map((item) => (
+              <li key={item.id}>{item.message}</li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            disabled={busy}
+            className="mt-3 h-11 rounded-full bg-accent px-5 text-sm font-semibold text-on-accent disabled:opacity-60"
+            onClick={onAck}
+          >
+            Đã xem
+          </button>
+        </div>
+      ) : null}
+      <div>
+        <h1 className="text-2xl font-semibold">Xin chào{me ? `, ${me.displayName}` : ""}</h1>
+        <p className="text-sm text-muted">Chọn môn để xem tài liệu, hoặc vào Ôn tập để làm đề.</p>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <StatTile value={subjects.length} label="môn học" tone="pink" />
+        <StatTile value={totalDocs} label="tài liệu" tone="blue" />
+        <StatTile value={totalQuizzes} label="đề thực hành" tone="pink" />
+      </div>
+      <div>
+        <SectionTitle>Mới thêm</SectionTitle>
+        {recent.length ? (
+          <ul className="space-y-2">
+            {recent.map(({ file, subject }) => (
+              <li key={file.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpenSubject(subject.id, file.section)}
+                  className="flex min-h-16 w-full items-center gap-3 rounded-2xl border border-line bg-surface px-3 py-2 text-left"
+                >
+                  <FileIcon name={file.name} mime={file.mime} section={file.section} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-semibold">{file.name}</span>
+                    <span className="block truncate text-sm text-muted">
+                      {subject.name} · {sectionLabel(file.section)} · {file.created}
+                    </span>
+                  </span>
+                  <ChevronRight aria-hidden="true" className="size-5 shrink-0 text-muted" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState
+            icon={FolderOpen}
+            title="Chưa có tài liệu nào"
+            hint="Khi chủ web thêm tài liệu, chúng sẽ hiện ở đây."
+            action={
+              subjects.length ? null : (
+                <button type="button" onClick={onSeeSubjects} className="h-11 rounded-full bg-accent px-5 text-sm font-semibold text-on-accent">
+                  Xem môn học
+                </button>
+              )
+            }
+          />
+        )}
+      </div>
+      <div>
+        <SectionTitle
+          action={
+            <button type="button" onClick={onSeeRanking} className="inline-flex h-11 items-center gap-1 text-sm font-semibold text-accent-2">
+              Xem tất cả
+              <ChevronRight aria-hidden="true" className="size-4" />
+            </button>
+          }
+        >
+          Xếp hạng ôn tập
+        </SectionTitle>
+        <LeaderboardList limit={3} version={rankVersion} />
+      </div>
+    </section>
+  );
+}
+
+function SubjectsTab({
   subjects,
   owner,
-  previewOwner,
   busy,
-  pendingReviews,
-  resetRequests,
-  openReports,
-  submissions,
-  pinned,
-  recent,
-  isNew,
-  onOpenFile,
-  onQuiz,
   onOpen,
-  onUsers,
-  onShare,
-  onReview,
-  onInfo,
   onAdd,
 }: {
   subjects: Subject[];
   owner: boolean;
-  previewOwner: boolean;
   busy: boolean;
-  pendingReviews: number;
-  resetRequests: number;
-  openReports: number;
-  submissions: MySubmission[];
-  pinned: FileEntry[];
-  recent: FileEntry[];
-  isNew: (subject: Subject) => boolean;
-  onOpenFile: (file: FileMeta) => void;
-  onQuiz: () => void;
   onOpen: (id: string) => void;
-  onUsers: () => void;
-  onShare: () => void;
-  onReview: () => void;
-  onInfo: () => void;
   onAdd: (name: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -760,78 +797,16 @@ function Home({
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Môn học</h1>
         {owner ? (
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="inline-flex h-11 items-center gap-2 rounded-full bg-accent px-4 text-sm font-semibold text-on-accent"
-              onClick={() => setAdding((open) => !open)}
-            >
-              <Plus aria-hidden="true" className="size-4" />
-              Thêm môn học
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-11 items-center gap-2 rounded-full border border-pink-deep bg-surface px-4 text-sm font-semibold text-accent"
-              onClick={onReview}
-            >
-              <ClipboardCheck aria-hidden="true" className="size-4" />
-              Xét duyệt tài liệu
-              {pendingReviews > 0 ? (
-                <span className="grid min-w-6 place-items-center rounded-full bg-pink px-1.5 text-xs">{pendingReviews}</span>
-              ) : null}
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-11 items-center gap-2 rounded-full border border-pink-deep bg-surface px-4 text-sm font-semibold text-accent"
-              onClick={onQuiz}
-            >
-              <Flag aria-hidden="true" className="size-4" />
-              Đề trắc nghiệm
-              {openReports > 0 ? (
-                <span className="grid min-w-6 place-items-center rounded-full bg-pink px-1.5 text-xs">{openReports}</span>
-              ) : null}
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-11 items-center gap-2 rounded-full border border-pink-deep bg-surface px-4 text-sm font-semibold text-accent"
-              onClick={onInfo}
-            >
-              <Users aria-hidden="true" className="size-4" />
-              Thông tin user
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-11 items-center gap-2 rounded-full border border-pink-deep bg-surface px-4 text-sm font-semibold text-accent"
-              onClick={onUsers}
-            >
-              <Shield aria-hidden="true" className="size-4" />
-              Người dùng
-              {resetRequests > 0 ? (
-                <span className="grid min-w-6 place-items-center rounded-full bg-pink px-1.5 text-xs">{resetRequests}</span>
-              ) : null}
-            </button>
-          </div>
-        ) : (
           <button
             type="button"
             className="inline-flex h-11 items-center gap-2 rounded-full bg-accent px-4 text-sm font-semibold text-on-accent"
-            onClick={onShare}
+            onClick={() => setAdding((open) => !open)}
           >
-            <Share2 aria-hidden="true" className="size-4" />
-            Chia sẻ tài liệu
+            <Plus aria-hidden="true" className="size-4" />
+            Thêm môn học
           </button>
-        )}
+        ) : null}
       </div>
-      {previewOwner ? (
-        <p className="mb-4 rounded-2xl bg-blue px-4 py-3 text-sm">
-          Bạn đang xem trước với quyền chủ web. Sau khi xuất bản, vào link công khai và đăng nhập Owner — dữ liệu xem trước không chuyển sang bản đã xuất bản.
-        </p>
-      ) : null}
-      {owner && !previewOwner ? (
-        <p className="mb-4 rounded-2xl bg-blue px-4 py-3 text-sm">
-          Tài liệu bạn tải lên có hiệu lực ngay. Tài liệu thành viên gửi chỉ công khai sau khi bạn duyệt.
-        </p>
-      ) : null}
       {adding ? (
         <form
           className="mb-4 flex flex-col gap-2 sm:flex-row"
@@ -849,6 +824,7 @@ function Home({
             onChange={(event) => setName(event.target.value)}
             placeholder="Tên môn học"
             aria-label="Tên môn học"
+            autoFocus
             className="h-12 min-w-0 flex-1 rounded-xl border border-pink-deep bg-surface px-3"
           />
           <button type="submit" disabled={busy} className="h-12 rounded-full bg-accent-2 px-5 font-semibold text-on-accent disabled:opacity-60">
@@ -856,22 +832,6 @@ function Home({
           </button>
         </form>
       ) : null}
-      {!owner && submissions.some((item) => item.status === "pending") ? (
-        <div className="mb-4 rounded-2xl bg-pink px-4 py-3">
-          <p className="font-semibold">Đang chờ duyệt</p>
-          <ul className="mt-2 space-y-1 text-sm">
-            {submissions
-              .filter((item) => item.status === "pending")
-              .map((item) => (
-                <li key={item.id} className="break-words">
-                  {item.name} · {item.subjectName} · {sectionLabel(item.section)}
-                </li>
-              ))}
-          </ul>
-        </div>
-      ) : null}
-      {pinned.length ? <FileShortcuts title="Đã ghim" items={pinned} onOpen={onOpenFile} /> : null}
-      {recent.length ? <FileShortcuts title="Xem gần đây" items={recent} onOpen={onOpenFile} /> : null}
       {subjects.length ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {subjects.map((item, index) => (
@@ -879,28 +839,280 @@ function Home({
               key={item.id}
               type="button"
               onClick={() => onOpen(item.id)}
-              className={`min-h-24 rounded-2xl px-4 py-5 text-left ${index % 2 === 0 ? "bg-pink" : "bg-blue"}`}
+              className={`flex min-h-24 items-center gap-3 rounded-2xl px-4 py-4 text-left ${index % 2 === 0 ? "bg-pink" : "bg-blue"}`}
             >
-              <span className="block text-lg font-semibold">
-                {item.name}
-                {isNew(item) ? (
-                  <span
-                    role="img"
-                    aria-label="Có tài liệu mới"
-                    className="ml-2 inline-block size-2.5 rounded-full bg-accent align-middle"
-                  />
-                ) : null}
+              <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-surface text-accent">
+                <BookOpen aria-hidden="true" className="size-6" />
               </span>
-              <span className="text-sm text-muted">
-                {countFiles(item)} tài liệu{isNew(item) ? " · có tài liệu mới" : ""}
+              <span className="min-w-0 flex-1">
+                <span className="block text-lg font-semibold break-words">{item.name}</span>
+                <span className="text-sm text-muted">{countFiles(item)} tài liệu</span>
               </span>
+              <ChevronRight aria-hidden="true" className="size-5 shrink-0 text-muted" />
             </button>
           ))}
         </div>
       ) : (
-        <p className="py-8 text-muted">
-          {owner ? "Chưa có môn học. Hãy thêm môn đầu tiên, rồi tải tài liệu lên." : "Chưa có môn học. Chủ web sẽ sớm cập nhật."}
+        <EmptyState
+          icon={BookOpen}
+          title="Chưa có môn học"
+          hint={owner ? "Thêm môn đầu tiên, rồi tải tài liệu lên." : "Chủ web sẽ sớm cập nhật."}
+          action={
+            owner ? (
+              <button type="button" onClick={() => setAdding(true)} className="inline-flex h-11 items-center gap-2 rounded-full bg-accent px-5 text-sm font-semibold text-on-accent">
+                <Plus aria-hidden="true" className="size-4" />
+                Thêm môn học
+              </button>
+            ) : null
+          }
+        />
+      )}
+    </section>
+  );
+}
+
+function AnonymousCard({ anonymous, busy, onChange }: { anonymous: boolean; busy: boolean; onChange: (next: boolean) => void }) {
+  return (
+    <div className="rounded-2xl border border-line bg-surface px-4">
+      <Switch
+        checked={anonymous}
+        disabled={busy}
+        onChange={onChange}
+        label="Ẩn danh trên bảng xếp hạng"
+        hint={
+          anonymous
+            ? "Mọi người chỉ thấy “Ẩn danh”. Chủ web vẫn xem được tên thật của bạn."
+            : "Tên bạn đang hiện trên bảng xếp hạng. Bật để đổi thành “Ẩn danh”."
+        }
+      />
+    </div>
+  );
+}
+
+function PracticeTab({
+  subjects,
+  view,
+  onView,
+  me,
+  busy,
+  rankVersion,
+  onOpenQuiz,
+  onToggleAnonymous,
+}: {
+  subjects: Subject[];
+  view: "quizzes" | "rank";
+  onView: (view: "quizzes" | "rank") => void;
+  me: Member | null;
+  busy: boolean;
+  rankVersion: number;
+  onOpenQuiz: (file: FileMeta) => void;
+  onToggleAnonymous: (next: boolean) => void;
+}) {
+  const withQuizzes = subjects.filter((item) => item.files.practice.length > 0);
+  return (
+    <section>
+      <h1 className="mb-3 text-2xl font-semibold">Ôn tập</h1>
+      <div role="tablist" aria-label="Ôn tập" className="mb-4 grid grid-cols-2 gap-1 rounded-full border border-line bg-surface p-1">
+        {(
+          [
+            ["quizzes", "Đề thực hành"],
+            ["rank", "Xếp hạng"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={view === id}
+            onClick={() => onView(id)}
+            className={`h-11 rounded-full text-sm font-semibold ${view === id ? "bg-pink text-accent" : "text-muted"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {view === "quizzes" ? (
+        withQuizzes.length ? (
+          <div className="space-y-5">
+            {withQuizzes.map((item) => (
+              <div key={item.id}>
+                <h2 className="mb-2 font-semibold text-muted">{item.name}</h2>
+                <ul className="space-y-2">
+                  {item.files.practice.map((file) => (
+                    <li key={file.id} className="flex items-center gap-3 rounded-2xl border border-line border-l-4 border-l-blue-deep bg-surface px-3 py-3">
+                      <FileIcon name={file.name} mime={file.mime} section={file.section} />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold break-words">{file.name}</p>
+                        <p className="text-sm text-muted">{file.created}</p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onOpenQuiz(file)}
+                        className="h-11 shrink-0 rounded-full bg-accent px-4 text-sm font-semibold text-on-accent disabled:opacity-60"
+                      >
+                        Làm bài
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={ClipboardList}
+            title="Chưa có đề thực hành"
+            hint="Đề ở mục “Thực hành trắc nghiệm” của từng môn sẽ hiện ở đây."
+          />
+        )
+      ) : (
+        <div className="space-y-4">
+          {me && me.role !== "owner" ? (
+            <AnonymousCard anonymous={me.anonymous} busy={busy} onChange={onToggleAnonymous} />
+          ) : null}
+          <LeaderboardList version={rankVersion} onEmptyAction={() => onView("quizzes")} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MeTab({
+  me,
+  gate,
+  busy,
+  pendingReviews,
+  resetRequests,
+  submissions,
+  onOpenPanel,
+  onToggleAnonymous,
+}: {
+  me: Member | null;
+  gate: boolean;
+  busy: boolean;
+  pendingReviews: number;
+  resetRequests: number;
+  submissions: MySubmission[];
+  onOpenPanel: (panel: Panel) => void;
+  onToggleAnonymous: (next: boolean) => void;
+}) {
+  const [stats, setStats] = useState<MyStats | null>(null);
+  useEffect(() => {
+    let alive = true;
+    myStats()
+      .then((result) => {
+        if (alive && result.ok) setStats(result.data);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!me) return <SkeletonList rows={3} />;
+  const owner = me.role === "owner";
+  const pendingMine = submissions.filter((item) => item.status === "pending").length;
+
+  const rowClass =
+    "flex min-h-14 w-full items-center gap-3 rounded-2xl border border-line bg-surface px-4 text-left font-semibold";
+  const badge = (count: number) =>
+    count > 0 ? <span className="grid min-w-6 place-items-center rounded-full bg-pink px-1.5 text-xs text-accent">{count}</span> : null;
+
+  return (
+    <section className="space-y-5">
+      <div className="flex items-center gap-4 rounded-2xl bg-pink px-4 py-4">
+        <Avatar name={me.displayName} className="size-16 bg-surface text-2xl" />
+        <div className="min-w-0">
+          <h1 className="truncate text-xl font-semibold">{me.displayName}</h1>
+          <p className="truncate text-sm text-muted">
+            {me.username}
+            {owner ? " · Chủ web" : ""}
+          </p>
+        </div>
+      </div>
+
+      {me.previewOwner ? (
+        <p className="rounded-2xl bg-blue px-4 py-3 text-sm text-pretty">
+          Bạn đang xem trước với quyền chủ web. Sau khi xuất bản, vào link công khai và đăng nhập Owner — dữ liệu xem trước không chuyển sang bản đã xuất bản.
         </p>
+      ) : null}
+      {owner && !me.previewOwner ? (
+        <p className="rounded-2xl bg-blue px-4 py-3 text-sm text-pretty">
+          Tài liệu bạn tải lên có hiệu lực ngay. Tài liệu thành viên gửi chỉ công khai sau khi bạn duyệt.
+        </p>
+      ) : null}
+
+      {!owner ? (
+        <div className="grid grid-cols-3 gap-3">
+          {stats ? (
+            <>
+              <StatTile value={stats.attempts} label="lần làm đề" tone="pink" />
+              <StatTile value={stats.quizzes} label="đề đã làm" tone="blue" />
+              <StatTile value={stats.downloads} label="lần tải" tone="pink" />
+            </>
+          ) : (
+            <>
+              <Skeleton className="h-16" />
+              <Skeleton className="h-16" />
+              <Skeleton className="h-16" />
+            </>
+          )}
+        </div>
+      ) : null}
+
+      {!owner ? <AnonymousCard anonymous={me.anonymous} busy={busy} onChange={onToggleAnonymous} /> : null}
+
+      <div>
+        <h2 className="mb-2 font-semibold">Giao diện</h2>
+        <ThemePicker />
+      </div>
+
+      <div className="space-y-2">
+        {owner ? (
+          <>
+            <h2 className="font-semibold">Quản lý</h2>
+            <button type="button" className={rowClass} onClick={() => onOpenPanel("review")}>
+              <ClipboardCheck aria-hidden="true" className="size-5 text-accent" />
+              <span className="flex-1">Xét duyệt tài liệu</span>
+              {badge(pendingReviews)}
+            </button>
+            <button type="button" className={rowClass} onClick={() => onOpenPanel("info")}>
+              <Users aria-hidden="true" className="size-5 text-accent" />
+              <span className="flex-1">Thông tin user</span>
+            </button>
+            <button type="button" className={rowClass} onClick={() => onOpenPanel("users")}>
+              <Shield aria-hidden="true" className="size-5 text-accent" />
+              <span className="flex-1">Người dùng</span>
+              {badge(resetRequests)}
+            </button>
+          </>
+        ) : (
+          <button type="button" className={rowClass} onClick={() => onOpenPanel("share")}>
+            <Share2 aria-hidden="true" className="size-5 text-accent" />
+            <span className="flex-1">Chia sẻ tài liệu</span>
+            {badge(pendingMine)}
+          </button>
+        )}
+      </div>
+
+      {gate ? null : (
+        <button
+          type="button"
+          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-full border border-pink-deep bg-surface font-semibold text-accent"
+          onClick={() => {
+            try {
+              sessionStorage.removeItem(NOTICE_CACHE_KEY);
+              sessionStorage.removeItem(FRESH_VISIT_KEY);
+            } catch {
+              /* ignore */
+            }
+            void signOut("/login");
+          }}
+        >
+          <LogOut aria-hidden="true" className="size-4" />
+          Đăng xuất
+        </button>
       )}
     </section>
   );
@@ -918,9 +1130,6 @@ function SubjectView({
   onDeleteSubject,
   onDeleteFile,
   onUpload,
-  newSince,
-  pinned,
-  onTogglePin,
 }: {
   subject: Subject;
   section: SectionId;
@@ -933,9 +1142,6 @@ function SubjectView({
   onDeleteSubject: () => void;
   onDeleteFile: (file: FileMeta) => void;
   onUpload: (file: File) => void;
-  newSince: number;
-  pinned: string[];
-  onTogglePin: (id: string) => void;
 }) {
   const spec = sectionById(section) ?? SECTIONS[0];
   const files = subject.files[section];
@@ -943,7 +1149,7 @@ function SubjectView({
   const [confirmFile, setConfirmFile] = useState<string | null>(null);
   return (
     <section>
-      <button type="button" className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
+      <button type="button" className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
         <ArrowLeft aria-hidden="true" className="size-4" />
         Tất cả môn học
       </button>
@@ -977,6 +1183,7 @@ function SubjectView({
             onClick={() => onSection(item.id)}
           >
             {item.label}
+            <span className="ml-1.5 text-xs font-medium text-muted">{subject.files[item.id].length}</span>
           </button>
         ))}
       </div>
@@ -1003,26 +1210,18 @@ function SubjectView({
       {files.length ? (
         <ul className="space-y-2">
           {files.map((file) => (
-            <li key={file.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line border-l-4 border-l-blue-deep bg-surface px-4 py-3">
-              <div className="min-w-0">
-                <p className="font-semibold break-words">
-                  {file.name}
-                  {file.createdAt > newSince ? (
-                    <span className="ml-2 rounded-full bg-accent px-2 py-0.5 align-middle text-xs font-semibold text-on-accent">Mới</span>
-                  ) : null}
-                </p>
-                <p className="text-sm text-muted">{file.created}</p>
+            <li key={file.id} className="rounded-2xl border border-line border-l-4 border-l-blue-deep bg-surface px-3 py-3">
+              <div className="flex items-center gap-3">
+                <FileIcon name={file.name} mime={file.mime} section={file.section} />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold break-words">{file.name}</p>
+                  <p className="text-sm text-muted">
+                    {kindLabel(fileKind(file.name, file.mime, file.section))}
+                    {formatBytes(file.bytes) ? ` · ${formatBytes(file.bytes)}` : ""} · {file.created}
+                  </p>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  aria-label={pinned.includes(file.id) ? "Bỏ ghim" : "Ghim tài liệu"}
-                  aria-pressed={pinned.includes(file.id)}
-                  className={`grid size-11 place-items-center rounded-full border ${pinned.includes(file.id) ? "border-accent bg-pink text-accent" : "border-pink-deep bg-surface"}`}
-                  onClick={() => onTogglePin(file.id)}
-                >
-                  {pinned.includes(file.id) ? <PinOff aria-hidden="true" className="size-4" /> : <Pin aria-hidden="true" className="size-4" />}
-                </button>
+              <div className="mt-3 flex flex-wrap gap-2">
                 <button type="button" className="h-11 rounded-full bg-accent px-4 text-sm font-semibold text-on-accent" onClick={() => onOpen(file)}>
                   {section === "practice" ? "Làm bài" : "Xem"}
                 </button>
@@ -1050,7 +1249,11 @@ function SubjectView({
           ))}
         </ul>
       ) : (
-        <p className="py-6 text-muted">Chưa có tài liệu trong mục này.</p>
+        <EmptyState
+          icon={FolderOpen}
+          title="Chưa có tài liệu trong mục này"
+          hint={owner ? "Bấm “Tải file lên” ở trên để thêm tài liệu đầu tiên." : "Chủ web sẽ sớm bổ sung tài liệu."}
+        />
       )}
     </section>
   );
@@ -1065,11 +1268,10 @@ function FilePreview({
   onBack: () => void;
   onDownload: () => void;
 }) {
-  const office = officeKind(viewer.name, viewer.mime);
-  const preview = viewer.mime.startsWith("image/") || viewer.mime === "application/pdf" || office !== null;
+  const preview = viewer.mime.startsWith("image/") || viewer.mime === "application/pdf";
   return (
     <section>
-      <button type="button" className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
+      <button type="button" className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
         <ArrowLeft aria-hidden="true" className="size-4" />
         Quay lại
       </button>
@@ -1078,10 +1280,14 @@ function FilePreview({
         <img src={viewer.url} alt="" className="max-h-[70vh] w-full rounded-2xl border border-line object-contain bg-surface" />
       ) : null}
       {preview && viewer.mime === "application/pdf" ? (
-        <iframe title={viewer.name} src={viewer.url} className="h-[78vh] w-full rounded-2xl border border-line bg-surface" />
+        <iframe title={viewer.name} src={viewer.url} className="h-[78vh] w-full rounded-2xl border border-line bg-white" />
       ) : null}
-      {office ? <OfficePreview url={viewer.url} name={viewer.name} kind={office} /> : null}
-      {!preview ? <p className="text-muted">Trình duyệt không xem trực tiếp loại file này. Hãy tải về.</p> : null}
+      {!preview ? (
+        <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-4">
+          <FileIcon name={viewer.name} mime={viewer.mime} className="size-14" />
+          <p className="text-pretty text-muted">Trình duyệt không xem trực tiếp loại file này. Hãy tải về để mở.</p>
+        </div>
+      ) : null}
       <a
         href={viewer.url}
         download={viewer.name}
@@ -1095,7 +1301,7 @@ function FilePreview({
   );
 }
 
-function SearchResults({ hits }: { hits: { key: string; title: string; meta: string; open: () => void }[] }) {
+function SearchResults({ hits }: { hits: SearchHit[] }) {
   return (
     <section>
       <h1 className="mb-3 text-2xl font-semibold">Kết quả tìm kiếm ({hits.length})</h1>
@@ -1103,15 +1309,19 @@ function SearchResults({ hits }: { hits: { key: string; title: string; meta: str
         <ul className="space-y-2">
           {hits.map((hit) => (
             <li key={hit.key}>
-              <button type="button" onClick={hit.open} className="w-full rounded-2xl border border-line bg-surface px-4 py-3 text-left">
-                <span className="block font-semibold break-words">{hit.title}</span>
-                <span className="text-sm text-muted">{hit.meta}</span>
+              <button type="button" onClick={hit.open} className="flex min-h-16 w-full items-center gap-3 rounded-2xl border border-line bg-surface px-3 py-2 text-left">
+                {hit.icon}
+                <span className="min-w-0 flex-1">
+                  <span className="block font-semibold break-words">{hit.title}</span>
+                  <span className="text-sm text-muted">{hit.meta}</span>
+                </span>
+                <ChevronRight aria-hidden="true" className="size-5 shrink-0 text-muted" />
               </button>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="text-muted">Không tìm thấy tài liệu phù hợp.</p>
+        <EmptyState icon={SearchX} title="Không tìm thấy kết quả" hint="Thử từ khóa ngắn hơn hoặc tên môn học." />
       )}
     </section>
   );
@@ -1208,9 +1418,9 @@ function PeoplePanel({
 
   return (
     <section>
-      <button type="button" className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
+      <button type="button" className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
         <ArrowLeft aria-hidden="true" className="size-4" />
-        Về trang chủ
+        Quay lại
       </button>
       <h1 className="mb-2 text-2xl font-semibold">Quản lý người dùng</h1>
       <p className="mb-4 text-sm text-pretty text-muted">
@@ -1350,9 +1560,11 @@ function PeoplePanel({
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-muted">Đang tải danh sách…</p>
+        <SkeletonList rows={4} label="Đang tải danh sách" />
       )}
-      {people && people.length === 0 ? <p className="text-muted">Chưa có người dùng nào.</p> : null}
+      {people && people.length === 0 ? (
+        <EmptyState icon={Users} title="Chưa có người dùng nào" hint="Tài khoản đăng ký mới sẽ hiện ở đây." />
+      ) : null}
     </section>
   );
 }
@@ -1376,9 +1588,9 @@ function SharePanel({
   const spec = sectionById(section) ?? SECTIONS[0];
   return (
     <section>
-      <button type="button" className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
+      <button type="button" className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
         <ArrowLeft aria-hidden="true" className="size-4" />
-        Về trang chủ
+        Quay lại
       </button>
       <h1 className="mb-2 text-2xl font-semibold">Chia sẻ tài liệu</h1>
       <p className="mb-4 text-sm text-pretty text-muted">
@@ -1480,7 +1692,7 @@ function SharePanel({
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-muted">Bạn chưa gửi tài liệu nào.</p>
+        <EmptyState icon={Share2} title="Bạn chưa gửi tài liệu nào" hint="Chọn môn, chọn file ở trên rồi bấm Gửi duyệt." />
       )}
     </section>
   );
@@ -1529,9 +1741,9 @@ function ReviewPanel({
 
   return (
     <section>
-      <button type="button" className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
+      <button type="button" className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
         <ArrowLeft aria-hidden="true" className="size-4" />
-        Về trang chủ
+        Quay lại
       </button>
       <h1 className="mb-2 text-2xl font-semibold">Xét duyệt tài liệu</h1>
       <p className="mb-4 text-sm text-pretty text-muted">
@@ -1546,21 +1758,15 @@ function ReviewPanel({
             </button>
           </div>
           {preview.section === "practice" ? (
-            <iframe title={preview.name} sandbox="allow-scripts allow-forms allow-modals" srcDoc={preview.html} className="h-[50vh] w-full rounded-2xl border border-line" />
+            <iframe title={preview.name} sandbox="allow-scripts allow-forms allow-modals" srcDoc={preview.html} className="h-[50vh] w-full rounded-2xl border border-line bg-white" />
           ) : null}
           {preview.section !== "practice" && preview.mime.startsWith("image/") ? (
             <img src={preview.url} alt="" className="max-h-[50vh] w-full rounded-2xl object-contain" />
           ) : null}
           {preview.section !== "practice" && preview.mime === "application/pdf" ? (
-            <iframe title={preview.name} src={preview.url} className="h-[50vh] w-full rounded-2xl border border-line" />
+            <iframe title={preview.name} src={preview.url} className="h-[50vh] w-full rounded-2xl border border-line bg-white" />
           ) : null}
-          {preview.section !== "practice" && officeKind(preview.name, preview.mime) ? (
-            <OfficePreview url={preview.url} name={preview.name} kind={officeKind(preview.name, preview.mime)!} heightClass="h-[50vh]" />
-          ) : null}
-          {preview.section !== "practice" &&
-          !preview.mime.startsWith("image/") &&
-          preview.mime !== "application/pdf" &&
-          !officeKind(preview.name, preview.mime) ? (
+          {preview.section !== "practice" && !preview.mime.startsWith("image/") && preview.mime !== "application/pdf" ? (
             <p className="text-sm text-muted">Trình duyệt không xem trực tiếp loại file này.</p>
           ) : null}
         </div>
@@ -1647,10 +1853,10 @@ function ReviewPanel({
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-muted">Không có tài liệu nào đang chờ duyệt.</p>
+          <EmptyState icon={ClipboardCheck} title="Không có tài liệu chờ duyệt" hint="Tài liệu thành viên gửi sẽ hiện ở đây." />
         )
       ) : (
-        <p className="text-sm text-muted">Đang tải hàng chờ…</p>
+        <SkeletonList rows={3} label="Đang tải hàng chờ" />
       )}
     </section>
   );
@@ -1678,9 +1884,9 @@ function InfoPanel({ onBack, setNotice }: { onBack: () => void; setNotice: (valu
 
   return (
     <section>
-      <button type="button" className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
+      <button type="button" className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
         <ArrowLeft aria-hidden="true" className="size-4" />
-        Về trang chủ
+        Quay lại
       </button>
       <h1 className="mb-2 text-2xl font-semibold">Thông tin user</h1>
       <p className="mb-4 text-sm text-pretty text-muted">
@@ -1707,9 +1913,11 @@ function InfoPanel({ onBack, setNotice }: { onBack: () => void; setNotice: (valu
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-muted">Đang tải danh sách…</p>
+        <SkeletonList rows={4} label="Đang tải danh sách" />
       )}
-      {people && people.length === 0 ? <p className="text-muted">Chưa có người tham gia.</p> : null}
+      {people && people.length === 0 ? (
+        <EmptyState icon={Users} title="Chưa có người tham gia" hint="Khi có người đăng ký, họ sẽ hiện ở đây." />
+      ) : null}
     </section>
   );
 }
@@ -1731,7 +1939,16 @@ function UserDetail({ userId, setNotice }: { userId: string; setNotice: (value: 
       alive = false;
     };
   }, [setNotice, userId]);
-  if (!stats) return <p className="mt-3 text-sm text-muted">Đang tải…</p>;
+  if (!stats) {
+    return (
+      <div role="status" className="mt-3 space-y-2 border-t border-line pt-3">
+        <span className="sr-only">Đang tải…</span>
+        <Skeleton className="h-4 w-1/3" />
+        <Skeleton className="h-8 w-16" />
+        <Skeleton className="h-4 w-2/3" />
+      </div>
+    );
+  }
   const quizCount = stats.quizzes.length;
   const attemptSum = stats.quizzes.reduce((sum, quiz) => sum + quiz.attempts, 0);
   return (
@@ -1841,10 +2058,14 @@ function PracticeComments({ documentId }: { documentId: string }) {
             ))}
           </ul>
         ) : (
-          <p className="mb-4 text-sm text-muted">Chưa có bình luận. Hãy là người đầu tiên.</p>
+          <p className="mb-4 rounded-xl border border-dashed border-pink-deep px-3 py-4 text-center text-sm text-muted">
+            Chưa có bình luận. Hãy là người đầu tiên.
+          </p>
         )
       ) : (
-        <p className="mb-4 text-sm text-muted">Đang tải bình luận…</p>
+        <div className="mb-4">
+          <SkeletonList rows={2} label="Đang tải bình luận" />
+        </div>
       )}
       <form
         className="space-y-2"
@@ -1883,522 +2104,6 @@ function PracticeComments({ documentId }: { documentId: string }) {
           Gửi
         </button>
       </form>
-    </section>
-  );
-}
-
-function FileShortcuts({ title, items, onOpen }: { title: string; items: FileEntry[]; onOpen: (file: FileMeta) => void }) {
-  return (
-    <div className="mb-4">
-      <h2 className="mb-2 text-lg font-semibold">{title}</h2>
-      <ul className="space-y-2">
-        {items.map(({ file, subject }) => (
-          <li key={file.id}>
-            <button
-              type="button"
-              onClick={() => onOpen(file)}
-              className="w-full rounded-2xl border border-line border-l-4 border-l-blue-deep bg-surface px-4 py-3 text-left"
-            >
-              <span className="block font-semibold break-words">{file.name}</span>
-              <span className="block text-sm text-muted">
-                {subject.name} · {sectionLabel(file.section)}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-type ReportDraft = { chapter: string; qn: string; question: string };
-
-function PracticeRunner({
-  documentId,
-  name,
-  html,
-  myUsername,
-}: {
-  documentId: string;
-  name: string;
-  html: string;
-  myUsername: string;
-}) {
-  const frame = useRef<HTMLIFrameElement>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [lastChapter, setLastChapter] = useState("");
-  const [status, setStatus] = useState("");
-  const [review, setReview] = useState<{ id: number; items: WrongQuestion[] } | null>(null);
-  const [report, setReport] = useState<ReportDraft | null>(null);
-  const srcDoc = useMemo(() => withQuizHook(html, review?.items ?? null), [html, review]);
-
-  useEffect(() => {
-    function onMessage(event: MessageEvent) {
-      if (!frame.current || event.source !== frame.current.contentWindow) return;
-      const data = event.data as Record<string, unknown> | null;
-      if (!data || typeof data !== "object") return;
-      if (data.__quizReport === 1) {
-        setReport({
-          chapter: typeof data.chapter === "string" ? data.chapter : "",
-          qn: typeof data.qn === "string" ? data.qn : "",
-          question: typeof data.question === "string" ? data.question : "",
-        });
-        return;
-      }
-      if (data.__quizResult !== 1) return;
-      if (typeof data.chapter !== "string" || typeof data.score !== "number" || typeof data.total !== "number") return;
-      const chapter = data.chapter;
-      if (chapter === REVIEW_CHAPTER) {
-        setStatus("Xong phần ôn tập. Lượt ôn không tính vào bảng xếp hạng.");
-        return;
-      }
-      setStatus("Đang lưu điểm…");
-      void submitScore({ data: { documentId, chapter, score: data.score, total: data.total, wrong: data.wrong } })
-        .then((result) => {
-          if (!result.ok) {
-            setStatus(result.message);
-            return;
-          }
-          setStatus("Đã lưu điểm vào bảng xếp hạng.");
-          setLastChapter(chapter);
-          setRefreshKey((key) => key + 1);
-        })
-        .catch(() => setStatus("Không lưu được điểm."));
-    }
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [documentId]);
-
-  return (
-    <>
-      {review ? (
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-blue px-4 py-2 text-sm">
-          <span>Đang ôn {review.items.length} câu làm sai.</span>
-          <button
-            type="button"
-            className="h-10 rounded-full border border-pink-deep bg-surface px-4 font-semibold"
-            onClick={() => {
-              setReview(null);
-              setStatus("");
-            }}
-          >
-            Thoát ôn tập
-          </button>
-        </div>
-      ) : null}
-      <iframe
-        key={review ? `review-${review.id}` : "main"}
-        ref={frame}
-        title={name}
-        sandbox="allow-scripts allow-forms allow-modals"
-        srcDoc={srcDoc}
-        className="h-[70vh] w-full rounded-2xl border border-line bg-surface"
-      />
-      {status ? (
-        <p className="mt-2 text-sm text-muted" role="status">
-          {status}
-        </p>
-      ) : null}
-      {report ? (
-        <ReportDialog
-          documentId={documentId}
-          draft={report}
-          onClose={() => setReport(null)}
-          onSent={() => setStatus("Đã gửi báo lỗi cho chủ web. Cảm ơn bạn!")}
-        />
-      ) : null}
-      <Leaderboard documentId={documentId} refreshKey={refreshKey} focusChapter={lastChapter} myUsername={myUsername} />
-      <MyHistory
-        documentId={documentId}
-        refreshKey={refreshKey}
-        onReview={(items) => {
-          setReview({ id: Date.now(), items });
-          setStatus("");
-          window.scrollTo({ top: 0, behavior: "smooth" });
-        }}
-      />
-    </>
-  );
-}
-
-function ReportDialog({
-  documentId,
-  draft,
-  onClose,
-  onSent,
-}: {
-  documentId: string;
-  draft: ReportDraft;
-  onClose: () => void;
-  onSent: () => void;
-}) {
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-4 sm:place-items-center" role="dialog" aria-modal="true" aria-label="Báo lỗi câu hỏi">
-      <form
-        className="w-full max-w-md rounded-2xl bg-surface p-4"
-        onSubmit={(event: FormEvent) => {
-          event.preventDefault();
-          if (busy) return;
-          setBusy(true);
-          setMessage("");
-          void submitReport({
-            data: { documentId, chapter: draft.chapter, question: `${draft.qn}: ${draft.question}`, note },
-          })
-            .then((result) => {
-              if (!result.ok) {
-                setMessage(result.message);
-                return;
-              }
-              onSent();
-              onClose();
-            })
-            .catch(() => setMessage("Không gửi được. Thử lại."))
-            .finally(() => setBusy(false));
-        }}
-      >
-        <h2 className="text-lg font-semibold">Báo lỗi câu hỏi</h2>
-        <p className="mt-1 text-sm text-muted break-words">
-          {draft.qn}: {draft.question}
-        </p>
-        <label className="mt-3 block text-sm font-semibold" htmlFor="report-note">
-          Lỗi ở đâu?
-        </label>
-        <textarea
-          id="report-note"
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-          maxLength={500}
-          rows={3}
-          placeholder="Ví dụ: đáp án đúng phải là B, hoặc câu hỏi bị thiếu chữ"
-          className="mt-1 w-full rounded-xl border border-pink-deep bg-surface px-3 py-2"
-        />
-        {message ? <p className="mt-2 text-sm text-danger">{message}</p> : null}
-        <div className="mt-3 flex gap-2">
-          <button type="submit" disabled={busy} className="h-11 rounded-full bg-accent px-5 text-sm font-semibold text-on-accent disabled:opacity-60">
-            Gửi báo lỗi
-          </button>
-          <button type="button" className="h-11 rounded-full border border-pink-deep px-5 text-sm font-semibold" onClick={onClose}>
-            Hủy
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function MyHistory({
-  documentId,
-  refreshKey,
-  onReview,
-}: {
-  documentId: string;
-  refreshKey: number;
-  onReview: (items: WrongQuestion[]) => void;
-}) {
-  const [items, setItems] = useState<HistoryItem[] | null>(null);
-  const [busyId, setBusyId] = useState("");
-  const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    let alive = true;
-    myHistory({ data: { documentId } })
-      .then((result) => {
-        if (!alive) return;
-        if (result.ok) setItems(result.data);
-        else setMessage(result.message);
-      })
-      .catch(() => {
-        if (alive) setMessage("Không tải được lịch sử.");
-      });
-    return () => {
-      alive = false;
-    };
-  }, [documentId, refreshKey]);
-
-  return (
-    <section className="mt-4 rounded-2xl border border-line bg-surface p-4">
-      <h2 className="mb-2 text-lg font-semibold">Lịch sử làm bài của tôi</h2>
-      {message ? <p className="mb-2 text-sm text-muted">{message}</p> : null}
-      {items && !items.length ? <p className="text-sm text-muted">Bạn chưa nộp bài nào ở đề này.</p> : null}
-      {items?.length ? (
-        <ul className="space-y-2">
-          {items.map((item) => (
-            <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-line px-4 py-3">
-              <div>
-                <p className="font-semibold">
-                  Chương {item.chapter} · {Math.round((item.score / Math.max(1, item.total)) * 100) / 10}/10
-                </p>
-                <p className="text-sm text-muted">
-                  {item.score}/{item.total} câu đúng · {item.created}
-                </p>
-              </div>
-              {item.wrongCount > 0 ? (
-                <button
-                  type="button"
-                  disabled={busyId === item.id}
-                  className="h-11 rounded-full bg-accent-2 px-4 text-sm font-semibold text-on-accent disabled:opacity-60"
-                  onClick={() => {
-                    setBusyId(item.id);
-                    setMessage("");
-                    void loadWrong({ data: { id: item.id } })
-                      .then((result) => {
-                        if (!result.ok) setMessage(result.message);
-                        else if (!result.data.length) setMessage("Lần làm này không còn dữ liệu câu sai.");
-                        else onReview(result.data);
-                      })
-                      .catch(() => setMessage("Không tải được câu sai."))
-                      .finally(() => setBusyId(""));
-                  }}
-                >
-                  Ôn {item.wrongCount} câu sai
-                </button>
-              ) : (
-                <span className="text-sm text-muted">Đúng hết</span>
-              )}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </section>
-  );
-}
-
-function QuizAdminPanel({ onBack, onChanged }: { onBack: () => void; onChanged: () => Promise<void> }) {
-  const [tab, setTab] = useState<"stats" | "reports">("stats");
-  const [stats, setStats] = useState<QuizStat[] | null>(null);
-  const [reports, setReports] = useState<ReportItem[] | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let alive = true;
-    quizStats()
-      .then((result) => {
-        if (!alive) return;
-        if (result.ok) setStats(result.data);
-        else setError(result.message);
-      })
-      .catch(() => {
-        if (alive) setError("Không tải được thống kê.");
-      });
-    listReports()
-      .then((result) => {
-        if (!alive) return;
-        if (result.ok) setReports(result.data);
-        else setError(result.message);
-      })
-      .catch(() => {
-        if (alive) setError("Không tải được báo lỗi.");
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  return (
-    <section>
-      <button type="button" className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
-        <ArrowLeft aria-hidden="true" className="size-4" />
-        Về trang chủ
-      </button>
-      <h1 className="mb-3 text-2xl font-semibold">Đề trắc nghiệm</h1>
-      {error ? <p className="mb-3 rounded-2xl bg-danger-bg px-4 py-3 text-sm text-danger">{error}</p> : null}
-      <div role="tablist" className="mb-4 flex gap-2">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "stats"}
-          onClick={() => setTab("stats")}
-          className={`h-11 rounded-full border px-4 text-sm font-semibold ${tab === "stats" ? "border-accent bg-pink text-accent" : "border-pink-deep bg-surface"}`}
-        >
-          Thống kê
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "reports"}
-          onClick={() => setTab("reports")}
-          className={`h-11 rounded-full border px-4 text-sm font-semibold ${tab === "reports" ? "border-accent bg-pink text-accent" : "border-pink-deep bg-surface"}`}
-        >
-          Báo lỗi{reports?.length ? ` (${reports.length})` : ""}
-        </button>
-      </div>
-      {tab === "stats" ? (
-        stats ? (
-          stats.length ? (
-            <>
-              <p className="mb-3 text-sm text-muted">Đề có điểm trung bình thấp nhất xếp trước, đề chưa ai làm xếp cuối.</p>
-              <ul className="space-y-2">
-                {stats.map((item) => (
-                  <li key={item.id} className="rounded-2xl border border-line bg-surface px-4 py-3">
-                    <p className="font-semibold break-words">{item.name}</p>
-                    <p className="text-sm text-muted">{item.subjectName}</p>
-                    {item.attempts ? (
-                      <>
-                        <p className="mt-1 text-sm">
-                          {item.attempts} lượt · {item.people} người · điểm trung bình{" "}
-                          <span className={`font-semibold ${item.average < 5 ? "text-danger" : "text-accent"}`}>{item.average}/10</span>
-                        </p>
-                        <ul className="mt-2 flex flex-wrap gap-2 text-xs">
-                          {item.chapters.map((chapter) => (
-                            <li key={chapter.chapter} className="rounded-full bg-pink px-3 py-1">
-                              Chương {chapter.chapter}: {chapter.average}/10 ({chapter.attempts} lượt)
-                            </li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : (
-                      <p className="mt-1 text-sm text-muted">Chưa ai làm.</p>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <p className="text-muted">Chưa có đề thực hành nào.</p>
-          )
-        ) : (
-          <p className="text-sm text-muted">Đang tải…</p>
-        )
-      ) : null}
-      {tab === "reports" ? (
-        reports ? (
-          reports.length ? (
-            <ul className="space-y-2">
-              {reports.map((item) => (
-                <li key={item.id} className="rounded-2xl border border-line bg-surface px-4 py-3">
-                  <p className="font-semibold break-words">{item.documentName}</p>
-                  <p className="text-sm text-muted">
-                    {item.subjectName} · Chương {item.chapter} · {item.author} ({item.username}) · {item.created}
-                  </p>
-                  <p className="mt-2 text-sm break-words text-muted">{item.question}</p>
-                  <p className="mt-1 break-words">{item.note}</p>
-                  <button
-                    type="button"
-                    className="mt-3 h-11 rounded-full bg-accent px-4 text-sm font-semibold text-on-accent"
-                    onClick={() => {
-                      void resolveReport({ data: { id: item.id } })
-                        .then((result) => {
-                          if (!result.ok) {
-                            setError(result.message);
-                            return;
-                          }
-                          setReports((list) => (list ? list.filter((row) => row.id !== item.id) : list));
-                          void onChanged();
-                        })
-                        .catch(() => setError("Không xử lý được. Thử lại."));
-                    }}
-                  >
-                    Đã xử lý
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted">Chưa có báo lỗi nào.</p>
-          )
-        ) : (
-          <p className="text-sm text-muted">Đang tải…</p>
-        )
-      ) : null}
-    </section>
-  );
-}
-
-function Leaderboard({
-  documentId,
-  refreshKey,
-  focusChapter,
-  myUsername,
-}: {
-  documentId: string;
-  refreshKey: number;
-  focusChapter: string;
-  myUsername: string;
-}) {
-  const [chapters, setChapters] = useState<LeaderboardChapter[] | null>(null);
-  const [picked, setPicked] = useState("");
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let alive = true;
-    listLeaderboard({ data: { documentId } })
-      .then((result) => {
-        if (!alive) return;
-        if (!result.ok) setError(result.message);
-        else {
-          setError("");
-          setChapters(result.data);
-        }
-      })
-      .catch(() => {
-        if (alive) setError("Không tải được bảng xếp hạng.");
-      });
-    return () => {
-      alive = false;
-    };
-  }, [documentId, refreshKey]);
-
-  useEffect(() => {
-    if (focusChapter) setPicked(focusChapter);
-  }, [focusChapter]);
-
-  const current = chapters?.find((item) => item.chapter === picked) ?? chapters?.[0];
-  const medals = ["🥇", "🥈", "🥉"];
-
-  return (
-    <section className="mt-4 rounded-2xl border border-line bg-surface p-4">
-      <h2 className="mb-2 text-lg font-semibold">Bảng xếp hạng</h2>
-      {error ? <p className="text-sm text-muted">{error}</p> : null}
-      {!error && !chapters ? <p className="text-sm text-muted">Đang tải…</p> : null}
-      {chapters && !chapters.length ? (
-        <p className="text-sm text-muted">Chưa có ai nộp bài. Làm xong và bấm Nộp bài để lên bảng.</p>
-      ) : null}
-      {chapters && chapters.length > 1 ? (
-        <div role="tablist" className="mb-3 flex gap-2 overflow-x-auto pb-1">
-          {chapters.map((item) => (
-            <button
-              key={item.chapter}
-              type="button"
-              role="tab"
-              aria-selected={item.chapter === current?.chapter}
-              onClick={() => setPicked(item.chapter)}
-              className={`h-10 shrink-0 rounded-full border px-4 text-sm font-semibold ${item.chapter === current?.chapter ? "border-accent bg-pink text-accent" : "border-pink-deep bg-surface"}`}
-            >
-              Chương {item.chapter}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {current && current.rows.length ? (
-        <ol className="space-y-2">
-          {current.rows.map((row, index) => (
-            <li
-              key={row.username}
-              className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${row.username === myUsername ? "border-accent bg-pink" : "border-line"}`}
-            >
-              <span className="flex min-w-0 items-center gap-3">
-                <span className="w-8 shrink-0 text-center font-semibold">{medals[index] ?? index + 1}</span>
-                <span className="min-w-0">
-                  <span className="block font-semibold break-words">
-                    {row.name}
-                    {row.username === myUsername ? " (bạn)" : ""}
-                  </span>
-                  <span className="block text-xs text-muted">{row.created}</span>
-                </span>
-              </span>
-              <span className="shrink-0 text-right">
-                <span className="block font-semibold text-accent">{(Math.round((row.score / row.total) * 100) / 10).toString()}/10</span>
-                <span className="block text-xs text-muted">
-                  {row.score}/{row.total} câu
-                </span>
-              </span>
-            </li>
-          ))}
-        </ol>
-      ) : null}
     </section>
   );
 }
