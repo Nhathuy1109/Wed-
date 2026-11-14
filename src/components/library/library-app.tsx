@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   ArrowLeft,
   BookOpen,
   ClipboardCheck,
   Download,
+  Flag,
   LogOut,
+  Pin,
+  PinOff,
   Plus,
   Search,
   Share2,
@@ -28,17 +31,25 @@ import {
   deleteDocument,
   deleteSubject,
   listComments,
+  listLeaderboard,
+  listReports,
   listNotices,
   listParticipants,
   listPeople,
   listReview,
   loadLibrary,
+  loadWrong,
+  myHistory,
+  quizStats,
   readDocument,
   readSubmission,
+  resolveReport,
   resetUserPassword,
   reviewSubmission,
   setBlock,
   submitDocument,
+  submitReport,
+  submitScore,
   trackUse,
   userActivity,
 } from "@/lib/library/api";
@@ -50,16 +61,23 @@ import {
   sectionById,
   type CommentItem,
   type FileMeta,
+  type HistoryItem,
+  type LeaderboardChapter,
   type LibraryNotice,
   type Member,
   type MySubmission,
   type Participant,
   type Person,
+  type QuizStat,
+  type ReportItem,
   type ReviewItem,
   type SectionId,
   type Subject,
   type UserStats,
+  type WrongQuestion,
 } from "@/lib/library/ids";
+import { REVIEW_CHAPTER, withQuizHook } from "@/lib/library/quiz-hook";
+import { loadPins, loadRecent, loadSeen, saveRecent, savePins, saveSeen, type SeenState } from "@/lib/library/personal";
 
 const subscribeNone = () => () => {};
 
@@ -70,6 +88,8 @@ function useGateSession(): boolean {
 type Viewer =
   | { kind: "practice"; id: string; name: string; html: string }
   | { kind: "file"; id: string; name: string; url: string; mime: string };
+
+type FileEntry = { file: FileMeta; subject: Subject };
 
 function countFiles(subject: Subject): number {
   return subject.files.theory.length + subject.files.quizfile.length + subject.files.practice.length;
@@ -113,6 +133,12 @@ export function LibraryApp() {
   const [mySubmissions, setMySubmissions] = useState<MySubmission[]>([]);
   const [pendingReviews, setPendingReviews] = useState(0);
   const [resetRequests, setResetRequests] = useState(0);
+  const [openReports, setOpenReports] = useState(0);
+  const [quizOpen, setQuizOpen] = useState(false);
+  const [pins, setPins] = useState<string[]>([]);
+  const [recents, setRecents] = useState<string[]>([]);
+  const [seen, setSeen] = useState<SeenState>({ baseline: Date.now(), subjects: {} });
+  const [newSince, setNewSince] = useState(Number.POSITIVE_INFINITY);
   const [notices, setNotices] = useState<LibraryNotice[]>(readCachedNotices);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -134,6 +160,7 @@ export function LibraryApp() {
     setMySubmissions(result.data.mySubmissions);
     setPendingReviews(result.data.pendingReviews);
     setResetRequests(result.data.resetRequests);
+    setOpenReports(result.data.openReports);
   }
 
   async function reload() {
@@ -178,6 +205,7 @@ export function LibraryApp() {
         setMySubmissions(result.data.mySubmissions);
         setPendingReviews(result.data.pendingReviews);
         setResetRequests(result.data.resetRequests);
+        setOpenReports(result.data.openReports);
       })
       .catch(() => {
         if (alive) setError("Không tải được thư viện.");
@@ -223,11 +251,76 @@ export function LibraryApp() {
     setShareOpen(false);
     setReviewOpen(false);
     setInfoOpen(false);
+    setQuizOpen(false);
     setViewer(null);
     setQuery("");
   }
 
-  const panelOpen = usersOpen || shareOpen || reviewOpen || infoOpen;
+  const panelOpen = usersOpen || shareOpen || reviewOpen || infoOpen || quizOpen;
+
+  const username = me?.username ?? "";
+
+  // Nạp dữ liệu cá nhân (ghim, xem gần đây, môn đã xem) khi biết tài khoản.
+  useEffect(() => {
+    if (!username) return;
+    setPins(loadPins(username));
+    setRecents(loadRecent(username));
+    setSeen(loadSeen(username));
+  }, [username]);
+
+  // Mở môn: nhớ mốc cũ để gắn nhãn "Mới", rồi đánh dấu môn này đã xem.
+  useEffect(() => {
+    if (!username || !subjectId) return;
+    const stored = loadSeen(username);
+    setNewSince(stored.subjects[subjectId] ?? stored.baseline);
+    const next = { ...stored, subjects: { ...stored.subjects, [subjectId]: Date.now() } };
+    saveSeen(username, next);
+    setSeen(next);
+  }, [username, subjectId]);
+
+  // Chủ web vừa tải file lên khi đang ở trong môn: không tự chấm đỏ file của mình.
+  useEffect(() => {
+    if (!username || !subjectId) return;
+    const stored = loadSeen(username);
+    const next = { ...stored, subjects: { ...stored.subjects, [subjectId]: Date.now() } };
+    saveSeen(username, next);
+    setSeen(next);
+  }, [subjects, username, subjectId]);
+
+  const fileIndex = useMemo(() => {
+    const map = new Map<string, FileEntry>();
+    for (const item of subjects) {
+      for (const group of SECTIONS) {
+        for (const file of item.files[group.id]) map.set(file.id, { file, subject: item });
+      }
+    }
+    return map;
+  }, [subjects]);
+  const pinnedItems = useMemo(
+    () => pins.map((id) => fileIndex.get(id)).filter((entry): entry is FileEntry => Boolean(entry)),
+    [pins, fileIndex],
+  );
+  const recentItems = useMemo(
+    () => recents.map((id) => fileIndex.get(id)).filter((entry): entry is FileEntry => Boolean(entry)).slice(0, 6),
+    [recents, fileIndex],
+  );
+
+  function subjectHasNew(item: Subject): boolean {
+    const since = seen.subjects[item.id] ?? seen.baseline;
+    return SECTIONS.some((group) => item.files[group.id].some((file) => file.createdAt > since));
+  }
+
+  function togglePin(id: string) {
+    const next = pins.includes(id) ? pins.filter((value) => value !== id) : [id, ...pins].slice(0, 30);
+    setPins(next);
+    if (username) savePins(username, next);
+  }
+
+  function rememberRecent(id: string) {
+    const next = [id, ...recents.filter((value) => value !== id)].slice(0, 12);
+    setRecents(next);
+    if (username) saveRecent(username, next);
+  }
 
   const subject = subjects.find((item) => item.id === subjectId) ?? null;
   const owner = me?.role === "owner";
@@ -246,6 +339,7 @@ export function LibraryApp() {
             setShareOpen(false);
             setReviewOpen(false);
             setInfoOpen(false);
+    setQuizOpen(false);
             setViewer(null);
             setSubjectId(item.id);
             setQuery("");
@@ -264,6 +358,7 @@ export function LibraryApp() {
               setShareOpen(false);
               setReviewOpen(false);
               setInfoOpen(false);
+    setQuizOpen(false);
               setViewer(null);
               setSubjectId(item.id);
               setSection(group.id);
@@ -275,6 +370,30 @@ export function LibraryApp() {
     }
     return hits;
   }, [query, subjects]);
+
+  function openFile(file: FileMeta) {
+    return run(async () => {
+      const result = await readDocument({ data: { id: file.id } });
+      if (!result.ok) {
+        setNotice(result.message);
+        return;
+      }
+      rememberRecent(file.id);
+      if (result.data.section === "practice") {
+        setViewer({ kind: "practice", id: file.id, name: result.data.name, html: result.data.body });
+        void trackUse({ data: { id: file.id, kind: "attempt" } });
+        return;
+      }
+      const blob = await (await fetch(result.data.body)).blob();
+      setViewer({
+        kind: "file",
+        id: file.id,
+        name: result.data.name,
+        mime: result.data.mime || blob.type,
+        url: URL.createObjectURL(blob),
+      });
+    });
+  }
 
   async function run(action: () => Promise<void>) {
     if (busy) return;
@@ -422,6 +541,9 @@ export function LibraryApp() {
             run={run}
           />
         ) : null}
+        {!loading && !error && !query.trim() && quizOpen && owner ? (
+          <QuizAdminPanel onBack={() => setQuizOpen(false)} onChanged={reload} />
+        ) : null}
         {!loading && !error && !query.trim() && infoOpen && owner ? (
           <InfoPanel onBack={() => setInfoOpen(false)} setNotice={setNotice} />
         ) : null}
@@ -432,12 +554,7 @@ export function LibraryApp() {
               Quay lại
             </button>
             <h1 className="mb-3 text-2xl font-semibold break-words">{viewer.name}</h1>
-            <iframe
-              title={viewer.name}
-              sandbox="allow-scripts allow-forms allow-modals"
-              srcDoc={viewer.html}
-              className="h-[70vh] w-full rounded-2xl border border-line bg-surface"
-            />
+            <PracticeRunner documentId={viewer.id} name={viewer.name} html={viewer.html} myUsername={me?.username ?? ""} />
             <PracticeComments documentId={viewer.id} />
           </section>
         ) : null}
@@ -458,28 +575,10 @@ export function LibraryApp() {
             busy={busy}
             onBack={() => setSubjectId(null)}
             onSection={setSection}
-            onOpen={(file) =>
-              run(async () => {
-                const result = await readDocument({ data: { id: file.id } });
-                if (!result.ok) {
-                  setNotice(result.message);
-                  return;
-                }
-                if (result.data.section === "practice") {
-                  setViewer({ kind: "practice", id: file.id, name: result.data.name, html: result.data.body });
-                  void trackUse({ data: { id: file.id, kind: "attempt" } });
-                  return;
-                }
-                const blob = await (await fetch(result.data.body)).blob();
-                setViewer({
-                  kind: "file",
-                  id: file.id,
-                  name: result.data.name,
-                  mime: result.data.mime || blob.type,
-                  url: URL.createObjectURL(blob),
-                });
-              })
-            }
+            onOpen={openFile}
+            newSince={newSince}
+            pinned={pins}
+            onTogglePin={togglePin}
             onDownload={(file) =>
               run(async () => {
                 const result = await readDocument({ data: { id: file.id } });
@@ -560,12 +659,22 @@ export function LibraryApp() {
             busy={busy}
             pendingReviews={pendingReviews}
             resetRequests={resetRequests}
+            openReports={openReports}
             submissions={mySubmissions}
+            pinned={pinnedItems}
+            recent={recentItems}
+            isNew={subjectHasNew}
+            onOpenFile={(file) => void openFile(file)}
+            onQuiz={() => {
+              goHome();
+              setQuizOpen(true);
+            }}
             onOpen={(id) => {
               setUsersOpen(false);
               setShareOpen(false);
               setReviewOpen(false);
               setInfoOpen(false);
+    setQuizOpen(false);
               setSubjectId(id);
             }}
             onUsers={() => {
@@ -610,7 +719,13 @@ function Home({
   busy,
   pendingReviews,
   resetRequests,
+  openReports,
   submissions,
+  pinned,
+  recent,
+  isNew,
+  onOpenFile,
+  onQuiz,
   onOpen,
   onUsers,
   onShare,
@@ -624,7 +739,13 @@ function Home({
   busy: boolean;
   pendingReviews: number;
   resetRequests: number;
+  openReports: number;
   submissions: MySubmission[];
+  pinned: FileEntry[];
+  recent: FileEntry[];
+  isNew: (subject: Subject) => boolean;
+  onOpenFile: (file: FileMeta) => void;
+  onQuiz: () => void;
   onOpen: (id: string) => void;
   onUsers: () => void;
   onShare: () => void;
@@ -657,6 +778,17 @@ function Home({
               Xét duyệt tài liệu
               {pendingReviews > 0 ? (
                 <span className="grid min-w-6 place-items-center rounded-full bg-pink px-1.5 text-xs">{pendingReviews}</span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-11 items-center gap-2 rounded-full border border-pink-deep bg-surface px-4 text-sm font-semibold text-accent"
+              onClick={onQuiz}
+            >
+              <Flag aria-hidden="true" className="size-4" />
+              Đề trắc nghiệm
+              {openReports > 0 ? (
+                <span className="grid min-w-6 place-items-center rounded-full bg-pink px-1.5 text-xs">{openReports}</span>
               ) : null}
             </button>
             <button
@@ -738,6 +870,8 @@ function Home({
           </ul>
         </div>
       ) : null}
+      {pinned.length ? <FileShortcuts title="Đã ghim" items={pinned} onOpen={onOpenFile} /> : null}
+      {recent.length ? <FileShortcuts title="Xem gần đây" items={recent} onOpen={onOpenFile} /> : null}
       {subjects.length ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {subjects.map((item, index) => (
@@ -747,8 +881,19 @@ function Home({
               onClick={() => onOpen(item.id)}
               className={`min-h-24 rounded-2xl px-4 py-5 text-left ${index % 2 === 0 ? "bg-pink" : "bg-blue"}`}
             >
-              <span className="block text-lg font-semibold">{item.name}</span>
-              <span className="text-sm text-muted">{countFiles(item)} tài liệu</span>
+              <span className="block text-lg font-semibold">
+                {item.name}
+                {isNew(item) ? (
+                  <span
+                    role="img"
+                    aria-label="Có tài liệu mới"
+                    className="ml-2 inline-block size-2.5 rounded-full bg-accent align-middle"
+                  />
+                ) : null}
+              </span>
+              <span className="text-sm text-muted">
+                {countFiles(item)} tài liệu{isNew(item) ? " · có tài liệu mới" : ""}
+              </span>
             </button>
           ))}
         </div>
@@ -773,6 +918,9 @@ function SubjectView({
   onDeleteSubject,
   onDeleteFile,
   onUpload,
+  newSince,
+  pinned,
+  onTogglePin,
 }: {
   subject: Subject;
   section: SectionId;
@@ -785,6 +933,9 @@ function SubjectView({
   onDeleteSubject: () => void;
   onDeleteFile: (file: FileMeta) => void;
   onUpload: (file: File) => void;
+  newSince: number;
+  pinned: string[];
+  onTogglePin: (id: string) => void;
 }) {
   const spec = sectionById(section) ?? SECTIONS[0];
   const files = subject.files[section];
@@ -854,10 +1005,24 @@ function SubjectView({
           {files.map((file) => (
             <li key={file.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line border-l-4 border-l-blue-deep bg-surface px-4 py-3">
               <div className="min-w-0">
-                <p className="font-semibold break-words">{file.name}</p>
+                <p className="font-semibold break-words">
+                  {file.name}
+                  {file.createdAt > newSince ? (
+                    <span className="ml-2 rounded-full bg-accent px-2 py-0.5 align-middle text-xs font-semibold text-on-accent">Mới</span>
+                  ) : null}
+                </p>
                 <p className="text-sm text-muted">{file.created}</p>
               </div>
               <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  aria-label={pinned.includes(file.id) ? "Bỏ ghim" : "Ghim tài liệu"}
+                  aria-pressed={pinned.includes(file.id)}
+                  className={`grid size-11 place-items-center rounded-full border ${pinned.includes(file.id) ? "border-accent bg-pink text-accent" : "border-pink-deep bg-surface"}`}
+                  onClick={() => onTogglePin(file.id)}
+                >
+                  {pinned.includes(file.id) ? <PinOff aria-hidden="true" className="size-4" /> : <Pin aria-hidden="true" className="size-4" />}
+                </button>
                 <button type="button" className="h-11 rounded-full bg-accent px-4 text-sm font-semibold text-on-accent" onClick={() => onOpen(file)}>
                   {section === "practice" ? "Làm bài" : "Xem"}
                 </button>
@@ -1718,6 +1883,522 @@ function PracticeComments({ documentId }: { documentId: string }) {
           Gửi
         </button>
       </form>
+    </section>
+  );
+}
+
+function FileShortcuts({ title, items, onOpen }: { title: string; items: FileEntry[]; onOpen: (file: FileMeta) => void }) {
+  return (
+    <div className="mb-4">
+      <h2 className="mb-2 text-lg font-semibold">{title}</h2>
+      <ul className="space-y-2">
+        {items.map(({ file, subject }) => (
+          <li key={file.id}>
+            <button
+              type="button"
+              onClick={() => onOpen(file)}
+              className="w-full rounded-2xl border border-line border-l-4 border-l-blue-deep bg-surface px-4 py-3 text-left"
+            >
+              <span className="block font-semibold break-words">{file.name}</span>
+              <span className="block text-sm text-muted">
+                {subject.name} · {sectionLabel(file.section)}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+type ReportDraft = { chapter: string; qn: string; question: string };
+
+function PracticeRunner({
+  documentId,
+  name,
+  html,
+  myUsername,
+}: {
+  documentId: string;
+  name: string;
+  html: string;
+  myUsername: string;
+}) {
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [lastChapter, setLastChapter] = useState("");
+  const [status, setStatus] = useState("");
+  const [review, setReview] = useState<{ id: number; items: WrongQuestion[] } | null>(null);
+  const [report, setReport] = useState<ReportDraft | null>(null);
+  const srcDoc = useMemo(() => withQuizHook(html, review?.items ?? null), [html, review]);
+
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (!frame.current || event.source !== frame.current.contentWindow) return;
+      const data = event.data as Record<string, unknown> | null;
+      if (!data || typeof data !== "object") return;
+      if (data.__quizReport === 1) {
+        setReport({
+          chapter: typeof data.chapter === "string" ? data.chapter : "",
+          qn: typeof data.qn === "string" ? data.qn : "",
+          question: typeof data.question === "string" ? data.question : "",
+        });
+        return;
+      }
+      if (data.__quizResult !== 1) return;
+      if (typeof data.chapter !== "string" || typeof data.score !== "number" || typeof data.total !== "number") return;
+      const chapter = data.chapter;
+      if (chapter === REVIEW_CHAPTER) {
+        setStatus("Xong phần ôn tập. Lượt ôn không tính vào bảng xếp hạng.");
+        return;
+      }
+      setStatus("Đang lưu điểm…");
+      void submitScore({ data: { documentId, chapter, score: data.score, total: data.total, wrong: data.wrong } })
+        .then((result) => {
+          if (!result.ok) {
+            setStatus(result.message);
+            return;
+          }
+          setStatus("Đã lưu điểm vào bảng xếp hạng.");
+          setLastChapter(chapter);
+          setRefreshKey((key) => key + 1);
+        })
+        .catch(() => setStatus("Không lưu được điểm."));
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [documentId]);
+
+  return (
+    <>
+      {review ? (
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-blue px-4 py-2 text-sm">
+          <span>Đang ôn {review.items.length} câu làm sai.</span>
+          <button
+            type="button"
+            className="h-10 rounded-full border border-pink-deep bg-surface px-4 font-semibold"
+            onClick={() => {
+              setReview(null);
+              setStatus("");
+            }}
+          >
+            Thoát ôn tập
+          </button>
+        </div>
+      ) : null}
+      <iframe
+        key={review ? `review-${review.id}` : "main"}
+        ref={frame}
+        title={name}
+        sandbox="allow-scripts allow-forms allow-modals"
+        srcDoc={srcDoc}
+        className="h-[70vh] w-full rounded-2xl border border-line bg-surface"
+      />
+      {status ? (
+        <p className="mt-2 text-sm text-muted" role="status">
+          {status}
+        </p>
+      ) : null}
+      {report ? (
+        <ReportDialog
+          documentId={documentId}
+          draft={report}
+          onClose={() => setReport(null)}
+          onSent={() => setStatus("Đã gửi báo lỗi cho chủ web. Cảm ơn bạn!")}
+        />
+      ) : null}
+      <Leaderboard documentId={documentId} refreshKey={refreshKey} focusChapter={lastChapter} myUsername={myUsername} />
+      <MyHistory
+        documentId={documentId}
+        refreshKey={refreshKey}
+        onReview={(items) => {
+          setReview({ id: Date.now(), items });
+          setStatus("");
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+      />
+    </>
+  );
+}
+
+function ReportDialog({
+  documentId,
+  draft,
+  onClose,
+  onSent,
+}: {
+  documentId: string;
+  draft: ReportDraft;
+  onClose: () => void;
+  onSent: () => void;
+}) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-4 sm:place-items-center" role="dialog" aria-modal="true" aria-label="Báo lỗi câu hỏi">
+      <form
+        className="w-full max-w-md rounded-2xl bg-surface p-4"
+        onSubmit={(event: FormEvent) => {
+          event.preventDefault();
+          if (busy) return;
+          setBusy(true);
+          setMessage("");
+          void submitReport({
+            data: { documentId, chapter: draft.chapter, question: `${draft.qn}: ${draft.question}`, note },
+          })
+            .then((result) => {
+              if (!result.ok) {
+                setMessage(result.message);
+                return;
+              }
+              onSent();
+              onClose();
+            })
+            .catch(() => setMessage("Không gửi được. Thử lại."))
+            .finally(() => setBusy(false));
+        }}
+      >
+        <h2 className="text-lg font-semibold">Báo lỗi câu hỏi</h2>
+        <p className="mt-1 text-sm text-muted break-words">
+          {draft.qn}: {draft.question}
+        </p>
+        <label className="mt-3 block text-sm font-semibold" htmlFor="report-note">
+          Lỗi ở đâu?
+        </label>
+        <textarea
+          id="report-note"
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          maxLength={500}
+          rows={3}
+          placeholder="Ví dụ: đáp án đúng phải là B, hoặc câu hỏi bị thiếu chữ"
+          className="mt-1 w-full rounded-xl border border-pink-deep bg-surface px-3 py-2"
+        />
+        {message ? <p className="mt-2 text-sm text-danger">{message}</p> : null}
+        <div className="mt-3 flex gap-2">
+          <button type="submit" disabled={busy} className="h-11 rounded-full bg-accent px-5 text-sm font-semibold text-on-accent disabled:opacity-60">
+            Gửi báo lỗi
+          </button>
+          <button type="button" className="h-11 rounded-full border border-pink-deep px-5 text-sm font-semibold" onClick={onClose}>
+            Hủy
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function MyHistory({
+  documentId,
+  refreshKey,
+  onReview,
+}: {
+  documentId: string;
+  refreshKey: number;
+  onReview: (items: WrongQuestion[]) => void;
+}) {
+  const [items, setItems] = useState<HistoryItem[] | null>(null);
+  const [busyId, setBusyId] = useState("");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    myHistory({ data: { documentId } })
+      .then((result) => {
+        if (!alive) return;
+        if (result.ok) setItems(result.data);
+        else setMessage(result.message);
+      })
+      .catch(() => {
+        if (alive) setMessage("Không tải được lịch sử.");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [documentId, refreshKey]);
+
+  return (
+    <section className="mt-4 rounded-2xl border border-line bg-surface p-4">
+      <h2 className="mb-2 text-lg font-semibold">Lịch sử làm bài của tôi</h2>
+      {message ? <p className="mb-2 text-sm text-muted">{message}</p> : null}
+      {items && !items.length ? <p className="text-sm text-muted">Bạn chưa nộp bài nào ở đề này.</p> : null}
+      {items?.length ? (
+        <ul className="space-y-2">
+          {items.map((item) => (
+            <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-line px-4 py-3">
+              <div>
+                <p className="font-semibold">
+                  Chương {item.chapter} · {Math.round((item.score / Math.max(1, item.total)) * 100) / 10}/10
+                </p>
+                <p className="text-sm text-muted">
+                  {item.score}/{item.total} câu đúng · {item.created}
+                </p>
+              </div>
+              {item.wrongCount > 0 ? (
+                <button
+                  type="button"
+                  disabled={busyId === item.id}
+                  className="h-11 rounded-full bg-accent-2 px-4 text-sm font-semibold text-on-accent disabled:opacity-60"
+                  onClick={() => {
+                    setBusyId(item.id);
+                    setMessage("");
+                    void loadWrong({ data: { id: item.id } })
+                      .then((result) => {
+                        if (!result.ok) setMessage(result.message);
+                        else if (!result.data.length) setMessage("Lần làm này không còn dữ liệu câu sai.");
+                        else onReview(result.data);
+                      })
+                      .catch(() => setMessage("Không tải được câu sai."))
+                      .finally(() => setBusyId(""));
+                  }}
+                >
+                  Ôn {item.wrongCount} câu sai
+                </button>
+              ) : (
+                <span className="text-sm text-muted">Đúng hết</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+function QuizAdminPanel({ onBack, onChanged }: { onBack: () => void; onChanged: () => Promise<void> }) {
+  const [tab, setTab] = useState<"stats" | "reports">("stats");
+  const [stats, setStats] = useState<QuizStat[] | null>(null);
+  const [reports, setReports] = useState<ReportItem[] | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    quizStats()
+      .then((result) => {
+        if (!alive) return;
+        if (result.ok) setStats(result.data);
+        else setError(result.message);
+      })
+      .catch(() => {
+        if (alive) setError("Không tải được thống kê.");
+      });
+    listReports()
+      .then((result) => {
+        if (!alive) return;
+        if (result.ok) setReports(result.data);
+        else setError(result.message);
+      })
+      .catch(() => {
+        if (alive) setError("Không tải được báo lỗi.");
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return (
+    <section>
+      <button type="button" className="mb-3 inline-flex items-center gap-1 text-sm font-semibold text-accent-2" onClick={onBack}>
+        <ArrowLeft aria-hidden="true" className="size-4" />
+        Về trang chủ
+      </button>
+      <h1 className="mb-3 text-2xl font-semibold">Đề trắc nghiệm</h1>
+      {error ? <p className="mb-3 rounded-2xl bg-danger-bg px-4 py-3 text-sm text-danger">{error}</p> : null}
+      <div role="tablist" className="mb-4 flex gap-2">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "stats"}
+          onClick={() => setTab("stats")}
+          className={`h-11 rounded-full border px-4 text-sm font-semibold ${tab === "stats" ? "border-accent bg-pink text-accent" : "border-pink-deep bg-surface"}`}
+        >
+          Thống kê
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "reports"}
+          onClick={() => setTab("reports")}
+          className={`h-11 rounded-full border px-4 text-sm font-semibold ${tab === "reports" ? "border-accent bg-pink text-accent" : "border-pink-deep bg-surface"}`}
+        >
+          Báo lỗi{reports?.length ? ` (${reports.length})` : ""}
+        </button>
+      </div>
+      {tab === "stats" ? (
+        stats ? (
+          stats.length ? (
+            <>
+              <p className="mb-3 text-sm text-muted">Đề có điểm trung bình thấp nhất xếp trước, đề chưa ai làm xếp cuối.</p>
+              <ul className="space-y-2">
+                {stats.map((item) => (
+                  <li key={item.id} className="rounded-2xl border border-line bg-surface px-4 py-3">
+                    <p className="font-semibold break-words">{item.name}</p>
+                    <p className="text-sm text-muted">{item.subjectName}</p>
+                    {item.attempts ? (
+                      <>
+                        <p className="mt-1 text-sm">
+                          {item.attempts} lượt · {item.people} người · điểm trung bình{" "}
+                          <span className={`font-semibold ${item.average < 5 ? "text-danger" : "text-accent"}`}>{item.average}/10</span>
+                        </p>
+                        <ul className="mt-2 flex flex-wrap gap-2 text-xs">
+                          {item.chapters.map((chapter) => (
+                            <li key={chapter.chapter} className="rounded-full bg-pink px-3 py-1">
+                              Chương {chapter.chapter}: {chapter.average}/10 ({chapter.attempts} lượt)
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <p className="mt-1 text-sm text-muted">Chưa ai làm.</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="text-muted">Chưa có đề thực hành nào.</p>
+          )
+        ) : (
+          <p className="text-sm text-muted">Đang tải…</p>
+        )
+      ) : null}
+      {tab === "reports" ? (
+        reports ? (
+          reports.length ? (
+            <ul className="space-y-2">
+              {reports.map((item) => (
+                <li key={item.id} className="rounded-2xl border border-line bg-surface px-4 py-3">
+                  <p className="font-semibold break-words">{item.documentName}</p>
+                  <p className="text-sm text-muted">
+                    {item.subjectName} · Chương {item.chapter} · {item.author} ({item.username}) · {item.created}
+                  </p>
+                  <p className="mt-2 text-sm break-words text-muted">{item.question}</p>
+                  <p className="mt-1 break-words">{item.note}</p>
+                  <button
+                    type="button"
+                    className="mt-3 h-11 rounded-full bg-accent px-4 text-sm font-semibold text-on-accent"
+                    onClick={() => {
+                      void resolveReport({ data: { id: item.id } })
+                        .then((result) => {
+                          if (!result.ok) {
+                            setError(result.message);
+                            return;
+                          }
+                          setReports((list) => (list ? list.filter((row) => row.id !== item.id) : list));
+                          void onChanged();
+                        })
+                        .catch(() => setError("Không xử lý được. Thử lại."));
+                    }}
+                  >
+                    Đã xử lý
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted">Chưa có báo lỗi nào.</p>
+          )
+        ) : (
+          <p className="text-sm text-muted">Đang tải…</p>
+        )
+      ) : null}
+    </section>
+  );
+}
+
+function Leaderboard({
+  documentId,
+  refreshKey,
+  focusChapter,
+  myUsername,
+}: {
+  documentId: string;
+  refreshKey: number;
+  focusChapter: string;
+  myUsername: string;
+}) {
+  const [chapters, setChapters] = useState<LeaderboardChapter[] | null>(null);
+  const [picked, setPicked] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    listLeaderboard({ data: { documentId } })
+      .then((result) => {
+        if (!alive) return;
+        if (!result.ok) setError(result.message);
+        else {
+          setError("");
+          setChapters(result.data);
+        }
+      })
+      .catch(() => {
+        if (alive) setError("Không tải được bảng xếp hạng.");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [documentId, refreshKey]);
+
+  useEffect(() => {
+    if (focusChapter) setPicked(focusChapter);
+  }, [focusChapter]);
+
+  const current = chapters?.find((item) => item.chapter === picked) ?? chapters?.[0];
+  const medals = ["🥇", "🥈", "🥉"];
+
+  return (
+    <section className="mt-4 rounded-2xl border border-line bg-surface p-4">
+      <h2 className="mb-2 text-lg font-semibold">Bảng xếp hạng</h2>
+      {error ? <p className="text-sm text-muted">{error}</p> : null}
+      {!error && !chapters ? <p className="text-sm text-muted">Đang tải…</p> : null}
+      {chapters && !chapters.length ? (
+        <p className="text-sm text-muted">Chưa có ai nộp bài. Làm xong và bấm Nộp bài để lên bảng.</p>
+      ) : null}
+      {chapters && chapters.length > 1 ? (
+        <div role="tablist" className="mb-3 flex gap-2 overflow-x-auto pb-1">
+          {chapters.map((item) => (
+            <button
+              key={item.chapter}
+              type="button"
+              role="tab"
+              aria-selected={item.chapter === current?.chapter}
+              onClick={() => setPicked(item.chapter)}
+              className={`h-10 shrink-0 rounded-full border px-4 text-sm font-semibold ${item.chapter === current?.chapter ? "border-accent bg-pink text-accent" : "border-pink-deep bg-surface"}`}
+            >
+              Chương {item.chapter}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {current && current.rows.length ? (
+        <ol className="space-y-2">
+          {current.rows.map((row, index) => (
+            <li
+              key={row.username}
+              className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${row.username === myUsername ? "border-accent bg-pink" : "border-line"}`}
+            >
+              <span className="flex min-w-0 items-center gap-3">
+                <span className="w-8 shrink-0 text-center font-semibold">{medals[index] ?? index + 1}</span>
+                <span className="min-w-0">
+                  <span className="block font-semibold break-words">
+                    {row.name}
+                    {row.username === myUsername ? " (bạn)" : ""}
+                  </span>
+                  <span className="block text-xs text-muted">{row.created}</span>
+                </span>
+              </span>
+              <span className="shrink-0 text-right">
+                <span className="block font-semibold text-accent">{(Math.round((row.score / row.total) * 100) / 10).toString()}/10</span>
+                <span className="block text-xs text-muted">
+                  {row.score}/{row.total} câu
+                </span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
     </section>
   );
 }
