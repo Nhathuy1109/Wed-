@@ -205,7 +205,7 @@ export function PixelWorld({ displayName }: { displayName: string }) {
         <div className="world-companion" aria-label={`Linh thú ${spirit.name}`}>
           <div className="companion-orbit" aria-hidden="true">✧</div>
           <div className="companion-ground-shadow" aria-hidden="true" />
-          <img src={spirit.src} alt={spirit.name} />
+          <img className={`companion-sprite companion-${spirit.id}`} src={prefs.animations ? spirit.src : spirit.staticSrc ?? spirit.src} alt={spirit.name} />
           <span className="companion-name">{spirit.name}</span>
           <span className="companion-element">{profile.element} · {profile.rarity}</span>
           <button type="button" className="pet-button" onClick={petSpirit}>♡ Chạm tương tác</button>

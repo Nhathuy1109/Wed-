@@ -14,6 +14,7 @@ import {
   Presentation,
   Sun,
   PawPrint,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { fileKind, type FileKind } from "@/lib/library/ids";
@@ -22,13 +23,14 @@ import { setThemePref, useThemePref, type ThemePref } from "@/lib/theme";
 
 /* ---------- Thanh điều hướng dưới ---------- */
 
-export type TabId = "home" | "subjects" | "practice" | "wordquiz" | "me";
+export type TabId = "home" | "subjects" | "practice" | "wordquiz" | "study" | "me";
 
 const TABS: { id: TabId; label: string; icon: LucideIcon }[] = [
   { id: "home", label: "Trang chủ", icon: House },
   { id: "subjects", label: "Môn", icon: BookOpen },
   { id: "practice", label: "Ôn tập", icon: ClipboardList },
   { id: "wordquiz", label: "Word→TN", icon: FilePenLine },
+  { id: "study", label: "Học tập", icon: Sparkles },
   { id: "me", label: "Tôi", icon: PawPrint },
 ];
 

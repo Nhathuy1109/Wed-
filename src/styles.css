@@ -384,8 +384,8 @@ html[data-theme="dark"] .brand-mark { box-shadow: 4px 4px 0 #514467; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .hero-mascot { animation: mascot-float 4.5s ease-in-out infinite; }
-  .creature-card img { transition: transform .2s ease; }
-  .creature-card:hover img { transform: translateY(-3px) rotate(-3deg); }
+  .creature-card img { transition: transform .22s ease, filter .22s ease; }
+  .creature-card:hover img { transform: translateY(-4px) rotate(-3deg) scale(1.04); filter: drop-shadow(0 4px 0 rgb(137 129 151 / 12%)); }
   @keyframes mascot-float {
     0%, 100% { transform: translateY(0) rotate(2deg); }
     50% { transform: translateY(-6px) rotate(-1deg); }
@@ -453,20 +453,27 @@ html[data-theme="dark"] .brand-mark { box-shadow: 4px 4px 0 #514467; }
   height: auto;
   image-rendering: pixelated;
 }
-.gait-step { animation: step 0.45s ease-in-out infinite; }
-.gait-hop { animation: hop 0.55s ease-in-out infinite; }
-.gait-waddle { animation: waddle 0.4s ease-in-out infinite; }
-.gait-float { animation: float 2.4s ease-in-out infinite; }
-.gait-roll { animation: roll 1.1s ease-in-out infinite; }
-.gait-prowl { animation: prowl 1.4s ease-in-out infinite; }
-.gait-slink { animation: slink 0.8s ease-in-out infinite; }
-.gait-pace { animation: pace 0.7s ease-in-out infinite; }
-.gait-glide { animation: glide 2.8s ease-in-out infinite; }
-.gait-swish { animation: swish 0.9s ease-in-out infinite; }
-.gait-swim { animation: swim 1.6s ease-in-out infinite; }
-.gait-undulate { animation: undulate 1.3s ease-in-out infinite; }
-.gait-soft { animation: soft 0.9s ease-in-out infinite; }
-.gait-dance { animation: dance 0.5s ease-in-out infinite; }
+.gait-step { animation: step .76s ease-in-out infinite; }
+.gait-hop { animation: hop .86s cubic-bezier(.42,0,.28,1) infinite; }
+.gait-waddle { animation: waddle .92s ease-in-out infinite; }
+.gait-float { animation: float 3.2s ease-in-out infinite; }
+.gait-roll { animation: roll 1.8s ease-in-out infinite; }
+.gait-prowl { animation: prowl 1.55s ease-in-out infinite; }
+.gait-slink { animation: slink 1.25s ease-in-out infinite; }
+.gait-pace { animation: pace 1.12s ease-in-out infinite; }
+.gait-glide { animation: glide 3.3s ease-in-out infinite; }
+.gait-swish { animation: swish 1.45s ease-in-out infinite; }
+.gait-swim { animation: swim 2.2s ease-in-out infinite; }
+.gait-undulate { animation: undulate 1.8s ease-in-out infinite; }
+.gait-soft { animation: soft 2.2s ease-in-out infinite; }
+.gait-dance { animation: dance 1.08s ease-in-out infinite; }
+.gait-pig { animation: pig-bounce 1.12s cubic-bezier(.35,.05,.4,1) infinite; transform-origin: center bottom; }
+.sprite { transform-origin: center bottom; backface-visibility: hidden; will-change: transform; }
+.species-pig:after { content: "♥"; position: absolute; right: 3px; top: -8px; color: #ef79a6; font-size: 14px; opacity: 0; animation: pig-heart 2.8s ease-in-out infinite; text-shadow: 1px 1px #fff; }
+.species-pig .sprite { filter: drop-shadow(0 2px 0 rgb(183 77 123 / 12%)); }
+.species-axolotl .sprite { filter: drop-shadow(0 0 4px rgb(243 159 196 / 35%)); }
+.species-capybara .sprite { transform-origin: center 72%; }
+.species-corgi .sprite { transform-origin: center bottom; }
 
 @keyframes travel {
   0%, 100% { transform: translateX(8px); }
@@ -484,73 +491,98 @@ html[data-theme="dark"] .brand-mark { box-shadow: 4px 4px 0 #514467; }
   87%  { left: 22%; bottom: 28px; transform: translateX(-50%); }
   100% { left: 50%; bottom: 18px; transform: translateX(-50%); }
 }
-@keyframes face {
-  0%, 49% { transform: scaleX(1); }
-  50%, 100% { transform: scaleX(-1); }
-}
-@keyframes face-circle {
-  0%, 24% { transform: scaleX(1); }
-  25%, 74% { transform: scaleX(-1); }
-  75%, 100% { transform: scaleX(1); }
-}
+@keyframes face { 0%, 49% { transform: scaleX(1); } 50%, 100% { transform: scaleX(-1); } }
+@keyframes face-circle { 0%, 24% { transform: scaleX(1); } 25%, 74% { transform: scaleX(-1); } 75%, 100% { transform: scaleX(1); } }
 @keyframes step {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  25% { transform: translateY(-2px) scaleY(1.02); }
+  50% { transform: translateY(-4px) scaleY(.98); }
+  75% { transform: translateY(-1px) scaleY(1.01); }
 }
 @keyframes hop {
-  0%, 100% { transform: translateY(0); }
-  40% { transform: translateY(-14px); }
+  0%, 100% { transform: translateY(0) scale(1,1); }
+  30% { transform: translateY(-12px) scale(.98,1.04); }
+  48% { transform: translateY(-15px) scale(1,1); }
+  72% { transform: translateY(1px) scale(1.08,.9); }
 }
 @keyframes waddle {
-  0%, 100% { transform: rotate(-8deg); }
-  50% { transform: rotate(8deg); }
+  0%, 100% { transform: rotate(-6deg) translateY(0); }
+  25% { transform: rotate(2deg) translateY(-2px); }
+  50% { transform: rotate(7deg) translateY(0); }
+  75% { transform: rotate(-1deg) translateY(-2px); }
 }
 @keyframes float {
-  0%, 100% { transform: translateY(4px); }
-  50% { transform: translateY(-14px); }
+  0%, 100% { transform: translate3d(0,4px,0) rotate(-2deg); }
+  50% { transform: translate3d(0,-13px,0) rotate(2deg); }
 }
 @keyframes roll {
-  0%, 100% { transform: rotate(-8deg); }
-  50% { transform: rotate(8deg) translateY(-4px); }
+  0%, 100% { transform: rotate(-7deg) translateY(0) scale(1); }
+  25% { transform: rotate(0) translateY(-2px) scale(1.02); }
+  50% { transform: rotate(8deg) translateY(-4px) scale(.98,1.02); }
+  75% { transform: rotate(0) translateY(-2px); }
 }
 @keyframes prowl {
-  0%, 100% { transform: translateY(4px); }
-  50% { transform: translateY(0); }
+  0%, 100% { transform: translateY(3px) skewX(0); }
+  25% { transform: translateY(0) skewX(-2deg); }
+  50% { transform: translateY(2px) skewX(1deg); }
+  75% { transform: translateY(-1px) skewX(-1deg); }
 }
 @keyframes slink {
-  0%, 100% { transform: translateY(6px); }
-  50% { transform: translateY(1px); }
+  0%, 100% { transform: translateY(4px) scaleY(.98) skewX(-2deg); }
+  50% { transform: translateY(0) scaleY(1.02) skewX(2deg); }
 }
 @keyframes pace {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
+  0%, 100% { transform: translateY(0) rotate(0); }
+  25% { transform: translateY(-4px) rotate(-2deg); }
+  50% { transform: translateY(1px) rotate(1deg); }
+  75% { transform: translateY(-3px) rotate(2deg); }
 }
 @keyframes glide {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
+  0%, 100% { transform: translateY(2px) rotate(2deg); }
+  50% { transform: translateY(-10px) rotate(-2deg); }
 }
 @keyframes swish {
-  0%, 100% { transform: rotate(-5deg); }
-  50% { transform: rotate(6deg); }
+  0%, 100% { transform: rotate(-4deg) translateY(0); }
+  25% { transform: rotate(4deg) translateY(-3px); }
+  50% { transform: rotate(7deg) translateY(0); }
+  75% { transform: rotate(-1deg) translateY(-2px); }
 }
 @keyframes swim {
-  0%, 100% { transform: translateY(6px) rotate(-6deg); }
-  50% { transform: translateY(-8px) rotate(6deg); }
+  0%, 100% { transform: translateY(5px) rotate(-5deg) scaleX(1); }
+  25% { transform: translateY(0) rotate(1deg) scaleX(1.02); }
+  50% { transform: translateY(-7px) rotate(5deg) scaleX(.98); }
+  75% { transform: translateY(0) rotate(-1deg) scaleX(1.02); }
 }
 @keyframes undulate {
-  0%, 100% { transform: rotate(-7deg); }
-  50% { transform: rotate(7deg) translateY(-6px); }
+  0%, 100% { transform: rotate(-5deg) translateY(0) scaleX(1); }
+  25% { transform: rotate(2deg) translateY(-3px) scaleX(1.02); }
+  50% { transform: rotate(6deg) translateY(-6px) scaleX(.98); }
+  75% { transform: rotate(-1deg) translateY(-2px) scaleX(1.02); }
 }
 @keyframes soft {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
+  0%, 100% { transform: translateY(1px) scale(1); }
+  50% { transform: translateY(-3px) scale(1.025,.985); }
 }
 @keyframes dance {
-  0%, 100% { transform: rotate(-7deg); }
-  50% { transform: translateY(-12px) rotate(7deg); }
+  0%, 100% { transform: rotate(-6deg) translateY(0) scale(1); }
+  25% { transform: rotate(0) translateY(-8px) scale(1.02); }
+  50% { transform: rotate(6deg) translateY(-2px) scale(.98,1.02); }
+  75% { transform: rotate(0) translateY(-10px) scale(1.02); }
+}
+@keyframes pig-bounce {
+  0%, 100% { transform: translateY(0) rotate(-1deg) scale(1,1); }
+  18% { transform: translateY(-3px) rotate(1deg) scale(.99,1.02); }
+  42% { transform: translateY(-8px) rotate(-1deg) scale(1.015,.985); }
+  62% { transform: translateY(0) rotate(1deg) scale(1.06,.91); }
+  78% { transform: translateY(-2px) rotate(0) scale(.99,1.02); }
+}
+@keyframes pig-heart {
+  0%, 54%, 100% { opacity: 0; transform: translateY(5px) scale(.6); }
+  65% { opacity: .95; transform: translateY(-2px) scale(1); }
+  82% { opacity: 0; transform: translateY(-10px) scale(1.15); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .walker, .face, .sprite { animation: none !important; }
+  .walker, .face, .sprite, .species-pig:after { animation: none !important; }
   .walker { left: 50%; transform: translateX(-50%); bottom: 18px; }
 }
 html[data-theme="dark"] .stage.hero {
@@ -792,3 +824,11 @@ html[data-theme="dark"] .stage.hero {
 .pixel-world.habitat-sky .world-ground { background: linear-gradient(180deg, #e3eafa 0 38%, #a6bbdf 38% 100%); border-color: #fff; }
 .pixel-world.habitat-sky .world-tree { background: #849cc5; box-shadow: -8px 8px 0 #849cc5, 8px 8px 0 #849cc5, 0 16px 0 #849cc5; }
 .pixel-world.habitat-sky .world-path { background: #d5dff0; }
+
+/* Character-specific pixel motion polish */
+.world-companion .companion-pig { image-rendering: pixelated; animation: pig-companion 1.35s cubic-bezier(.35,.05,.4,1) infinite; }
+.world-companion .companion-axolotl { animation-duration: 3.1s; }
+.world-companion .companion-capybara { animation-duration: 3.6s; }
+@keyframes pig-companion { 0%,100% { transform: translateY(0) rotate(-1deg) scale(1); } 38% { transform: translateY(-9px) rotate(1deg) scale(1.025,.98); } 60% { transform: translateY(0) rotate(-1deg) scale(1.06,.92); } 78% { transform: translateY(-2px) scale(.99,1.02); } }
+.garden-reduced-motion .walker, .garden-reduced-motion .face, .garden-reduced-motion .sprite { animation: none !important; }
+@media (max-width: 420px) { .bottom-nav ul { gap: 1px; padding-inline: 4px; } .bottom-nav button { font-size: 10px; } .bottom-nav button svg { width: 21px; height: 21px; } }

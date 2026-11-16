@@ -16,6 +16,8 @@ import {
   ClipboardList,
   Download,
   FolderOpen,
+  History,
+  Sparkles,
   LogOut,
   Pencil,
   Plus,
@@ -36,6 +38,7 @@ import { LeaderboardList } from "@/components/library/leaderboard";
 import { SpiritSection } from "@/components/spirit-garden";
 import { PixelLoadingScreen, PixelWorld } from "@/components/pixel-world";
 import { WordQuizTab } from "@/components/library/word-quiz-tab";
+import { StudyHub } from "@/components/library/study-hub";
 import { OfficePreview, officeKind } from "@/components/library/office-preview";
 import {
   Avatar,
@@ -311,6 +314,7 @@ export function LibraryApp() {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<TabId>("home");
   const [practiceView, setPracticeView] = useState<"quizzes" | "rank">("quizzes");
+  const [studyPane, setStudyPane] = useState<"assistant" | "history">("assistant");
   const [rankVersion, setRankVersion] = useState(0);
   const [subjectId, setSubjectId] = useState<string | null>(null);
   const [section, setSection] = useState<SectionId>("theory");
@@ -802,6 +806,7 @@ export function LibraryApp() {
         mime,
         url: URL.createObjectURL(blob),
       });
+      void trackUse({ data: { id: file.id, kind: "view" } });
       planScroll(null);
     });
   }
@@ -1028,6 +1033,10 @@ export function LibraryApp() {
               selectTab("practice");
             }}
             onSeeSubjects={() => selectTab("subjects")}
+            onSeeStudy={(pane) => {
+              setStudyPane(pane);
+              selectTab("study");
+            }}
             onAck={() =>
               run(async () => {
                 const result = await ackNotices();
@@ -1178,6 +1187,18 @@ export function LibraryApp() {
             onToggleFavorite={toggleFavorite}
           />
         ) : null}
+        {idle && tab === "study" ? (
+          <StudyHub
+            subjects={subjects}
+            initialPane={studyPane}
+            onOpenDocument={(id) => {
+              const file = subjects.flatMap((subject) => SECTIONS.flatMap((group) => subject.files[group.id]))
+                .find((item) => item.id === id);
+              if (file) void openFile(file);
+              else setNotice("Tài liệu này không còn trong thư viện.");
+            }}
+          />
+        ) : null}
         {idle && tab === "me" ? (
           <MeTab
             me={me}
@@ -1270,6 +1291,7 @@ function HomeTab({
   onOpenSubject,
   onSeeRanking,
   onSeeSubjects,
+  onSeeStudy,
   onAck,
 }: {
   me: Member | null;
@@ -1280,6 +1302,7 @@ function HomeTab({
   onOpenSubject: (id: string, section?: SectionId) => void;
   onSeeRanking: () => void;
   onSeeSubjects: () => void;
+  onSeeStudy: (pane: "assistant" | "history") => void;
   onAck: () => void;
 }) {
   const totalDocs = subjects.reduce((sum, item) => sum + countFiles(item), 0);
@@ -1320,6 +1343,18 @@ function HomeTab({
         <StatTile value={subjects.length} label="môn học" tone="pink" />
         <StatTile value={totalDocs} label="tài liệu" tone="blue" />
         <StatTile value={totalQuizzes} label="đề thực hành" tone="pink" />
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <button type="button" onClick={() => onSeeStudy("assistant")} className="group flex min-h-24 items-center gap-3 rounded-2xl border border-pink-deep bg-pink px-4 py-4 text-left transition-transform hover:-translate-y-0.5">
+          <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-surface text-accent"><Sparkles className="size-6" /></span>
+          <span className="min-w-0 flex-1"><span className="block font-extrabold">Hỏi Mochi AI</span><span className="mt-0.5 block text-xs text-muted">Giải thích bài học và hỏi theo tài liệu</span></span>
+          <ChevronRight className="size-5 shrink-0 text-accent" />
+        </button>
+        <button type="button" onClick={() => onSeeStudy("history")} className="group flex min-h-24 items-center gap-3 rounded-2xl border border-line bg-blue px-4 py-4 text-left transition-transform hover:-translate-y-0.5">
+          <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-surface text-accent-2"><History className="size-6" /></span>
+          <span className="min-w-0 flex-1"><span className="block font-extrabold">Lịch sử học tập</span><span className="mt-0.5 block text-xs text-muted">Xem lại tài liệu và điểm các lần làm đề</span></span>
+          <ChevronRight className="size-5 shrink-0 text-accent-2" />
+        </button>
       </div>
       <SpiritSection />
       <div className="dashboard-section">
@@ -1454,7 +1489,11 @@ function SubjectsTab({
                     "/mascots/pixel-dragon.svg",
                     "/mascots/pixel-unicorn.svg",
                     "/mascots/pixel-lion.svg",
-                  ][index % 6]}
+                    "/mascots/pixel-pig.gif",
+                    "/mascots/pixel-capybara.svg",
+                    "/mascots/pixel-axolotl.svg",
+                    "/mascots/pixel-corgi.svg",
+                  ][index % 10]}
                   alt=""
                 />
               </span>

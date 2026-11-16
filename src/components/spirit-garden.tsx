@@ -27,7 +27,7 @@ function Walker({
 }) {
   return (
     <div
-      className={`walker${spirit.lift ? " lift" : ""}${circle ? " circle" : ""}`}
+      className={`walker species-${spirit.id}${spirit.lift ? " lift" : ""}${circle ? " circle" : ""}`}
       style={{ ["--sprite" as string]: sprite, ["--dur" as string]: dur }}
     >
       <div className="face">
@@ -61,11 +61,16 @@ export function SpiritGarden({ compact = false }: { compact?: boolean }) {
   const [habitat, setHabitat] = useState("forest");
   const [careCount, setCareCount] = useState(0);
   const [message, setMessage] = useState("Hãy chọn một linh thú để bắt đầu cuộc phiêu lưu.");
+  const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
     setChosenId(readSelectedId());
     setHabitat(readHabitat());
     setCareCount(readSpiritCareCount());
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReducedMotion(motionQuery.matches);
+    const onMotionChange = (event: MediaQueryListEvent) => setReducedMotion(event.matches);
+    motionQuery.addEventListener("change", onMotionChange);
     const onSpiritChange = () => setChosenId(readSelectedId());
     const onWorldChange = () => setHabitat(readHabitat());
     const onCare = (event: Event) => {
@@ -81,6 +86,7 @@ export function SpiritGarden({ compact = false }: { compact?: boolean }) {
       window.removeEventListener(WORLD_CHANGE_EVENT, onWorldChange);
       window.removeEventListener(SPIRIT_CARE_EVENT, onCare);
       window.removeEventListener("storage", onSpiritChange);
+      motionQuery.removeEventListener("change", onMotionChange);
     };
   }, []);
 
@@ -119,9 +125,9 @@ export function SpiritGarden({ compact = false }: { compact?: boolean }) {
         </header>
       ) : null}
 
-      <section className={`stage hero garden-habitat-${habitat}`} aria-label={`Đang xem ${chosen.name}`}>
+      <section className={`stage hero garden-habitat-${habitat}${reducedMotion ? " garden-reduced-motion" : ""}`} aria-label={`Đang xem ${chosen.name}`}>
         <div className="ground" />
-        <Walker spirit={chosen} sprite="112px" dur="10s" circle />
+        <Walker spirit={reducedMotion ? { ...chosen, src: chosen.staticSrc ?? chosen.src } : chosen} sprite="112px" dur="10s" circle />
         <div className="hero-copy">
           <p className="text-sm font-semibold text-accent">Đang đồng hành</p>
           <h3 className="text-lg font-bold sm:text-xl">{chosen.name}</h3>
@@ -170,9 +176,9 @@ export function SpiritGarden({ compact = false }: { compact?: boolean }) {
                 aria-pressed={on}
                 className={`spirit-choice-card w-full rounded-2xl border p-2 text-left transition-colors ${on ? "is-selected border-accent bg-pink" : "border-line bg-surface"}`}
               >
-                <div className="stage card">
+                <div className={`stage card${reducedMotion ? " garden-reduced-motion" : ""}`}>
                   <div className="ground" />
-                  <Walker spirit={spirit} sprite="72px" dur="5.5s" />
+                  <Walker spirit={reducedMotion ? { ...spirit, src: spirit.staticSrc ?? spirit.src } : spirit} sprite="72px" dur="5.5s" />
                 </div>
                 <p className="mt-2 px-1 text-sm font-bold leading-snug">{spirit.name}</p>
                 <p className="px-1 pb-1 text-xs leading-snug text-muted">{details.personality}</p>

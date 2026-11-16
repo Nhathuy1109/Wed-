@@ -8,6 +8,7 @@ export type Spirit = {
   gait: string;
   lift: boolean;
   src: string;
+  staticSrc?: string;
 };
 
 export const GROUPS: { id: SpiritGroup | "all"; label: string }[] = [
@@ -28,6 +29,7 @@ export const spirits: Spirit[] = [
     gait: "undulate",
     lift: false,
     src: "/mascots/pixel-thanh-long.gif",
+    staticSrc: "/mascots/pixel-thanh-long.png",
   },
   {
     id: "huyen-vu",
@@ -37,6 +39,7 @@ export const spirits: Spirit[] = [
     gait: "prowl",
     lift: false,
     src: "/mascots/pixel-huyen-vu.gif",
+    staticSrc: "/mascots/pixel-huyen-vu.png",
   },
   {
     id: "chu-tuoc",
@@ -46,6 +49,7 @@ export const spirits: Spirit[] = [
     gait: "glide",
     lift: true,
     src: "/mascots/pixel-chu-tuoc.gif",
+    staticSrc: "/mascots/pixel-chu-tuoc.png",
   },
   {
     id: "bach-ho",
@@ -55,6 +59,7 @@ export const spirits: Spirit[] = [
     gait: "prowl",
     lift: false,
     src: "/mascots/pixel-bach-ho.gif",
+    staticSrc: "/mascots/pixel-bach-ho.png",
   },
   // —— Bộ pixel mới từ file bổ sung ——
   {
@@ -184,6 +189,16 @@ export const spirits: Spirit[] = [
     src: "/mascots/spirit-qilin.svg",
   },
   // —— Bổ sung thêm pixel ——
+  {
+    id: "pig",
+    name: "Heo hồng Mochi",
+    trait: "Heo con hồng hào, nhún nhảy vui vẻ và lắc chiếc đuôi xoăn.",
+    group: "cute",
+    gait: "pig",
+    lift: false,
+    src: "/mascots/pixel-pig.gif",
+    staticSrc: "/mascots/pixel-pig.png",
+  },
   {
     id: "bunny",
     name: "Thỏ bông",
@@ -328,6 +343,33 @@ export const spirits: Spirit[] = [
     lift: false,
     src: "/mascots/pixel-mushroom.svg",
   },
+  {
+    id: "capybara",
+    name: "Capybara lá non",
+    trait: "Điềm nhiên, chậm rãi và thích nằm sưởi nắng bên bờ suối.",
+    group: "cute",
+    gait: "soft",
+    lift: false,
+    src: "/mascots/pixel-capybara.svg",
+  },
+  {
+    id: "axolotl",
+    name: "Axolotl san hô",
+    trait: "Bơi lơ lửng, mang chiếc mào hồng mềm mại như san hô.",
+    group: "fantasy",
+    gait: "swim",
+    lift: true,
+    src: "/mascots/pixel-axolotl.svg",
+  },
+  {
+    id: "corgi",
+    name: "Corgi bánh mật",
+    trait: "Chân ngắn đáng yêu, chạy lon ton và luôn vẫy đuôi chào bạn.",
+    group: "cute",
+    gait: "hop",
+    lift: false,
+    src: "/mascots/pixel-corgi.svg",
+  },
 ];
 
 export const SPIRIT_KEY = "linh-thu-chon";
@@ -375,6 +417,10 @@ const SPIRIT_PROFILES: Record<string, SpiritProfile> = {
   moon: { personality: "Trầm lặng, mộng mơ, thích ngắm trời đêm.", element: "Nguyệt", habitat: "Bầu trời đêm", rarity: "Hiếm" },
   crystal: { personality: "Tĩnh tại, trong sáng, thích lưu giữ ký ức.", element: "Pha lê", habitat: "Hang tinh thể", rarity: "Hiếm" },
   mushroom: { personality: "Vui vẻ, hiếu khách, thích nơi ẩm mát.", element: "Mộc", habitat: "Rừng nấm", rarity: "Thường" },
+  pig: { personality: "Hồn nhiên, ấm áp, mang đến niềm vui và may mắn.", element: "Đất · Ánh sáng", habitat: "Vườn hồng", rarity: "Hiếm" },
+  capybara: { personality: "Điềm đạm, dễ gần, luôn giữ tinh thần thư thái.", element: "Mộc · Thủy", habitat: "Suối nắng", rarity: "Thường" },
+  axolotl: { personality: "Dịu dàng, tò mò, thích khám phá thế giới dưới nước.", element: "Thủy", habitat: "Hồ san hô", rarity: "Hiếm" },
+  corgi: { personality: "Trung thành, tinh nghịch, luôn tràn đầy năng lượng.", element: "Nắng", habitat: "Đồng cỏ mật ong", rarity: "Thường" },
 };
 
 export function getSpiritProfile(spirit: Spirit): SpiritProfile {

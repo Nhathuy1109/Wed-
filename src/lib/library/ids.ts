@@ -117,6 +117,17 @@ export type UserStats = {
   quizzes: { subject: string; name: string; attempts: number }[];
 };
 
+export type ActivityHistory = {
+  id: string;
+  documentId: string;
+  documentName: string;
+  subjectName: string;
+  kind: "view" | "download" | "attempt" | "quiz_result";
+  createdAt: string;
+  score?: number;
+  total?: number;
+};
+
 export type MyStats = {
   downloads: number;
   /** Số lần làm đề đã được lưu kết quả. */
