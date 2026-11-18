@@ -1,5 +1,8 @@
 export const OWNER_USERNAME = "Nhuy110927";
 
+export const DELETED_ACCOUNT_MESSAGE =
+  "Tài khoản của bạn đã bị quét do vi phạm yêu cầu về tên của wed";
+
 export const MAX_FILE_BYTES = 3 * 1024 * 1024;
 
 const USERNAME = /^[A-Za-z0-9_]{3,20}$/;

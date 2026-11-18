@@ -61,6 +61,7 @@ import {
   deleteComment,
   deleteDocument,
   deleteSubject,
+  deleteUserAccount,
   listComments,
   listNotices,
   listParticipants,
@@ -2526,6 +2527,35 @@ function PeoplePanel({
                   }
                 >
                   {person.blocked ? "Bỏ chặn" : "Chặn"}
+                </button>
+              )}
+              {person.role === "owner" || !person.registered ? null : (
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="h-11 rounded-full border border-danger px-4 text-sm font-semibold text-danger disabled:opacity-60"
+                  onClick={() => {
+                    if (
+                      !window.confirm(
+                        `Xóa vĩnh viễn tài khoản "${person.username}"? Toàn bộ dữ liệu của họ (điểm, bình luận, bài nộp...) sẽ bị xóa và không khôi phục được.`,
+                      )
+                    ) {
+                      return;
+                    }
+                    void run(async () => {
+                      const result = await deleteUserAccount({ data: { username: person.username } });
+                      if (!result.ok) {
+                        setNotice(result.message);
+                        return;
+                      }
+                      setNotice(`Đã xóa tài khoản ${person.username}.`);
+                      const next = await listPeople();
+                      if (next.ok) setPeople(next.data);
+                      await onChanged();
+                    });
+                  }}
+                >
+                  Xóa tài khoản
                 </button>
               )}
             </li>

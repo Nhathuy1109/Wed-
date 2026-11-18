@@ -3,6 +3,7 @@ import { hashPassword } from "better-auth/crypto";
 import { getSql } from "@/lib/db";
 import { authMiddleware } from "@/lib/auth/middleware";
 import {
+  DELETED_ACCOUNT_MESSAGE,
   emptyFiles,
   isOwnerUsername,
   MAX_FILE_BYTES,
@@ -269,6 +270,7 @@ export const registerMember = createServerFn({ method: "POST" })
       await sql`delete from "user" where id = ${userId}`;
       return fail("Không tạo được tài khoản. Thử một tên đăng nhập khác.");
     }
+    await sql`delete from deleted_accounts where username_key = ${key}`;
     return { ok: true, data: { username } };
   });
 
@@ -652,6 +654,53 @@ export const setBlock = createServerFn({ method: "POST" })
       await sql`delete from blocks where username = ${key}`;
     }
     return { ok: true, data: null };
+  });
+
+export const deleteUserAccount = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const body = (input ?? {}) as { username?: unknown };
+    return { username: typeof body.username === "string" ? body.username : "" };
+  })
+  .handler(async ({ context, data }): Promise<Ok<null> | Err> => {
+    const access = await requireMember(context.userId);
+    if (!requireOwner(access)) return access.ok ? fail("Chỉ chủ web mới xóa được tài khoản.") : access;
+    const username = normalizeUsername(data.username);
+    if (!username) return fail(usernameMessage);
+    if (isOwnerUsername(username)) return fail("Không thể xóa tài khoản chủ web.");
+    const sql = await getSql();
+    const key = username.toLowerCase();
+    const found = await sql<{ user_id: string; username: string; role: "owner" | "user" }>`
+      select user_id, username, role from profiles where username_key = ${key}
+    `;
+    const target = found[0];
+    if (!target) return fail("Không tìm thấy tài khoản này.");
+    if (target.role === "owner" || target.user_id === access.profile.user_id) {
+      return fail("Không thể xóa tài khoản chủ web.");
+    }
+    await sql`
+      insert into deleted_accounts (username_key, username) values (${key}, ${target.username})
+      on conflict (username_key) do update set username = excluded.username, deleted_at = now()
+    `;
+    // Mọi bảng dữ liệu của user đều "on delete cascade": phiên đăng nhập, hồ sơ, điểm, bình luận... bị xóa theo.
+    await sql`delete from "user" where id = ${target.user_id}`;
+    await sql`delete from password_requests where username_key = ${key}`;
+    return { ok: true, data: null };
+  });
+
+export const checkDeletedAccount = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const body = (input ?? {}) as { username?: unknown };
+    return { username: typeof body.username === "string" ? body.username : "" };
+  })
+  .handler(async ({ data }): Promise<{ deleted: boolean }> => {
+    const username = normalizeUsername(data.username);
+    if (!username || isOwnerUsername(username)) return { deleted: false };
+    const sql = await getSql();
+    const rows = await sql<{ username_key: string }>`
+      select username_key from deleted_accounts where username_key = ${username.toLowerCase()}
+    `;
+    return { deleted: rows.length > 0 };
   });
 
 export const requestPasswordReset = createServerFn({ method: "POST" })
