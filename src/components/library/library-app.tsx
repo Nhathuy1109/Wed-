@@ -163,8 +163,11 @@ const ANTI_SLEEP_KEY = "library-anti-sleep";
 const QUIZ_FULL_KEY = "library-quiz-full";
 const ANTI_SLEEP_GAIN_KEY = "library-anti-sleep-gain";
 const ANTI_SLEEP_GAINS = [1, 2, 3] as const;
-/** Đặt file nhạc vào public/sounds/chong-buon-ngu.mp3 (hoặc đổi đường dẫn ở đây). */
-const ANTI_SLEEP_SRC = "/sounds/chong-buon-ngu.mp3";
+/** Hai âm thanh để chọn (file nằm trong public/sounds/). */
+const ANTI_SLEEP_SOUNDS = ["/sounds/chong-buon-ngu.mp3", "/sounds/chong-buon-ngu-2.mp3"] as const;
+const ANTI_SLEEP_SOUND_KEY = "library-anti-sleep-sound";
+/** Nút ×1 ×2 ×3 tương ứng 1 lần, 1,5 lần, 2 lần âm lượng gốc. */
+const ANTI_SLEEP_GAIN_VALUES = [1, 1.5, 2] as const;
 /** Số câu đúng liên tiếp để phát nhạc. */
 const ANTI_SLEEP_STREAK = 7;
 
@@ -393,6 +396,8 @@ export function LibraryApp() {
   const [canNativeFs, setCanNativeFs] = useState(false);
   const [nativeFs, setNativeFs] = useState(false);
   const sectionRef = useRef<HTMLElement>(null);
+  const [soundNo, setSoundNo] = useState<1 | 2>(1);
+  const soundNoRef = useRef<1 | 2>(1);
   const [boost, setBoost] = useState<number>(1);
   const boostRef = useRef(1);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -759,6 +764,10 @@ export function LibraryApp() {
       const on = localStorage.getItem(ANTI_SLEEP_KEY) === "1";
       antiSleepRef.current = on;
       setAntiSleep(on);
+      if (localStorage.getItem(ANTI_SLEEP_SOUND_KEY) === "2") {
+        soundNoRef.current = 2;
+        setSoundNo(2);
+      }
       const g = Number(localStorage.getItem(ANTI_SLEEP_GAIN_KEY));
       if (g === 2 || g === 3) {
         boostRef.current = g;
@@ -822,6 +831,20 @@ export function LibraryApp() {
           hint={`Chọn sai hoặc đúng liên tiếp ${ANTI_SLEEP_STREAK} câu sẽ phát nhạc.`}
         />
         <div className="flex items-center gap-2 pb-2">
+          <span className="text-sm font-semibold">Âm thanh</span>
+          {([1, 2] as const).map((n) => (
+            <button
+              key={n}
+              type="button"
+              aria-pressed={soundNo === n}
+              onClick={() => changeSound(n)}
+              className={`h-9 rounded-full border px-3 text-sm font-semibold ${soundNo === n ? "border-accent bg-accent text-white" : "border-line"}`}
+            >
+              Âm thanh {n}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 pb-2">
           <span className="text-sm font-semibold">Âm lượng</span>
           {ANTI_SLEEP_GAINS.map((g) => (
             <button
@@ -842,7 +865,7 @@ export function LibraryApp() {
 
   function getAlarm(): HTMLAudioElement {
     if (!audioRef.current) {
-      const audio = new Audio(ANTI_SLEEP_SRC);
+      const audio = new Audio(ANTI_SLEEP_SOUNDS[soundNoRef.current - 1]);
       audio.preload = "auto";
       audioRef.current = audio;
     }
@@ -862,11 +885,29 @@ export function LibraryApp() {
         audioCtxRef.current = ctx;
         gainRef.current = gain;
       }
-      if (gainRef.current) gainRef.current.gain.value = boostRef.current;
+      if (gainRef.current) gainRef.current.gain.value = ANTI_SLEEP_GAIN_VALUES[boostRef.current - 1] ?? 1;
       void audioCtxRef.current?.resume();
     } catch {
       /* không khuếch đại được thì phát âm lượng thường */
     }
+  }
+
+  function changeSound(next: 1 | 2) {
+    soundNoRef.current = next;
+    setSoundNo(next);
+    try {
+      localStorage.setItem(ANTI_SLEEP_SOUND_KEY, String(next));
+    } catch {
+      /* ignore */
+    }
+    // Đổi file trên cùng một thẻ audio (giữ nguyên bộ khuếch đại) rồi phát thử.
+    const audio = getAlarm();
+    audio.src = ANTI_SLEEP_SOUNDS[next - 1];
+    audio.load();
+    prepareGain(audio);
+    audio.muted = false;
+    audio.currentTime = 0;
+    void audio.play().catch(() => {});
   }
 
   function changeBoost(next: number) {
