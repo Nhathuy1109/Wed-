@@ -156,6 +156,8 @@ const RECENT_KEY = "library-recent-searches";
 const SORT_KEY = "library-sort";
 const SEEN_PREFIX = "library-seen-docs:";
 const ANTI_SLEEP_KEY = "library-anti-sleep";
+const ANTI_SLEEP_GAIN_KEY = "library-anti-sleep-gain";
+const ANTI_SLEEP_GAINS = [1, 2, 3] as const;
 /** Đặt file nhạc vào public/sounds/chong-buon-ngu.mp3 (hoặc đổi đường dẫn ở đây). */
 const ANTI_SLEEP_SRC = "/sounds/chong-buon-ngu.mp3";
 /** Số câu đúng liên tiếp để phát nhạc. */
@@ -381,6 +383,10 @@ export function LibraryApp() {
   const antiSleepRef = useRef(false);
   const streakRef = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [boost, setBoost] = useState<number>(1);
+  const boostRef = useRef(1);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const gainRef = useRef<GainNode | null>(null);
   const answerRef = useRef<(correct: boolean) => void>(() => {});
   const backRef = useRef<() => boolean>(() => false);
 
@@ -743,6 +749,11 @@ export function LibraryApp() {
       const on = localStorage.getItem(ANTI_SLEEP_KEY) === "1";
       antiSleepRef.current = on;
       setAntiSleep(on);
+      const g = Number(localStorage.getItem(ANTI_SLEEP_GAIN_KEY));
+      if (g === 2 || g === 3) {
+        boostRef.current = g;
+        setBoost(g);
+      }
     } catch {
       /* ignore */
     }
@@ -755,6 +766,42 @@ export function LibraryApp() {
       audioRef.current = audio;
     }
     return audioRef.current;
+  }
+
+  /** Khuếch đại âm lượng vượt mức 100% của <audio> bằng Web Audio (×2, ×3). */
+  function prepareGain(audio: HTMLAudioElement) {
+    try {
+      if (!audioCtxRef.current) {
+        const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!Ctx) return;
+        const ctx = new Ctx();
+        const gain = ctx.createGain();
+        ctx.createMediaElementSource(audio).connect(gain);
+        gain.connect(ctx.destination);
+        audioCtxRef.current = ctx;
+        gainRef.current = gain;
+      }
+      if (gainRef.current) gainRef.current.gain.value = boostRef.current;
+      void audioCtxRef.current?.resume();
+    } catch {
+      /* không khuếch đại được thì phát âm lượng thường */
+    }
+  }
+
+  function changeBoost(next: number) {
+    boostRef.current = next;
+    setBoost(next);
+    try {
+      localStorage.setItem(ANTI_SLEEP_GAIN_KEY, String(next));
+    } catch {
+      /* ignore */
+    }
+    // Bấm nút là phát thử luôn để nghe mức âm lượng.
+    const audio = getAlarm();
+    prepareGain(audio);
+    audio.muted = false;
+    audio.currentTime = 0;
+    void audio.play().catch(() => {});
   }
 
   function changeAntiSleep(next: boolean) {
@@ -771,6 +818,7 @@ export function LibraryApp() {
       audio.pause();
       return;
     }
+    prepareGain(audio);
     // Bấm công tắc là thao tác của người dùng → "mở khóa" phát âm thanh (nhất là trên iPhone).
     audio.muted = true;
     audio
@@ -793,6 +841,7 @@ export function LibraryApp() {
     }
     streakRef.current = 0;
     const audio = getAlarm();
+    prepareGain(audio);
     audio.currentTime = 0;
     void audio.play().catch(() => {});
   };
@@ -1123,6 +1172,20 @@ export function LibraryApp() {
                 label="Chống buồn ngủ"
                 hint={`Chọn sai hoặc đúng liên tiếp ${ANTI_SLEEP_STREAK} câu sẽ phát nhạc.`}
               />
+              <div className="flex items-center gap-2 pb-2">
+                <span className="text-sm font-semibold">Âm lượng</span>
+                {ANTI_SLEEP_GAINS.map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    aria-pressed={boost === g}
+                    onClick={() => changeBoost(g)}
+                    className={`h-9 min-w-12 rounded-full border px-3 text-sm font-semibold ${boost === g ? "border-accent bg-accent text-white" : "border-line"}`}
+                  >
+                    ×{g}
+                  </button>
+                ))}
+              </div>
               <p className="pb-3 text-xs text-muted">🎧 Nên đeo tai nghe khi sử dụng nơi đông người và giảm âm lượng.</p>
             </div>
             <iframe
