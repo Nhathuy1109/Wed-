@@ -155,6 +155,11 @@ const SORT_OPTIONS: [SortMode, string][] = [
 const RECENT_KEY = "library-recent-searches";
 const SORT_KEY = "library-sort";
 const SEEN_PREFIX = "library-seen-docs:";
+const ANTI_SLEEP_KEY = "library-anti-sleep";
+/** Đặt file nhạc vào public/sounds/chong-buon-ngu.mp3 (hoặc đổi đường dẫn ở đây). */
+const ANTI_SLEEP_SRC = "/sounds/chong-buon-ngu.mp3";
+/** Số câu đúng liên tiếp để phát nhạc. */
+const ANTI_SLEEP_STREAK = 7;
 
 function kindGroup(file: FileMeta): KindFilter {
   const kind = fileKind(file.name, file.mime, file.section);
@@ -239,8 +244,44 @@ try{new MutationObserver(queue).observe(document.documentElement,{childList:true
 queue();
 })();`;
 
+
+/**
+ * Nhận dạng đáp án đúng/sai trong đề HTML rồi báo về trang cha: {type:"answer", correct}.
+ * - Đề mẫu của web (có st.qs, .qc, .opt): đọc đáp án từ dữ liệu st, tính câu chọn ĐẦU TIÊN của mỗi câu.
+ * - Đề khác (vd. Luật Kinh tế, game bóng bay): sau khi bấm, xem nút vừa bấm có thêm class
+ *   right/correct/ok (đúng) hoặc wrong/incorrect/bad (sai) hay không.
+ */
+const ANTI_SLEEP_BRIDGE = String.raw`(function(){
+if(window.__antiSleepBound)return;window.__antiSleepBound=true;
+function send(ok){try{parent.postMessage({source:"library-quiz",type:"answer",correct:!!ok},"*");}catch(e){}}
+var BADC=["wrong","incorrect","bad","false","sai","is-wrong","is-incorrect","wrong-answer"];
+var GOODC=["right","correct","ok","good","true","dung","is-correct","correct-answer"];
+function has(el,list){if(!el||!el.classList)return false;for(var i=0;i<list.length;i++){if(el.classList.contains(list[i]))return true;}return false;}
+document.addEventListener("click",function(ev){
+  try{
+    var t=ev.target;if(!t||!t.closest)return;
+    var o=t.closest("button,.opt,[class*=option],[role=button],label,li");
+    if(!o||o.disabled)return;
+    if(typeof st!=="undefined"&&st&&st.qs&&o.classList.contains("opt")){
+      var box=o.closest(".qc");if(!box||st._done)return;
+      var qi=Array.prototype.indexOf.call(document.querySelectorAll(".qc"),box);
+      var oi=Array.prototype.indexOf.call(box.querySelectorAll(".opt"),o);
+      var q=st.qs[qi];if(!q||!q.o[oi]||q.pick>=0)return;
+      send(q.o[oi].ok);return;
+    }
+    var bad0=has(o,BADC),good0=has(o,GOODC),done=false;
+    function check(){
+      if(done)return;
+      if(!bad0&&has(o,BADC)){done=true;send(false);}
+      else if(!good0&&has(o,GOODC)){done=true;send(true);}
+    }
+    setTimeout(check,150);setTimeout(check,800);
+  }catch(e){}
+},true);
+})();`;
+
 function withQuizBridge(html: string): string {
-  const tag = `<script>${QUIZ_BRIDGE}</script>`;
+  const tag = `<script>${QUIZ_BRIDGE}</script><script>${ANTI_SLEEP_BRIDGE}</script>`;
   const end = html.lastIndexOf("</body>");
   return end === -1 ? html + tag : html.slice(0, end) + tag + html.slice(end);
 }
@@ -336,6 +377,11 @@ export function LibraryApp() {
   const pendingScroll = useRef<number | null>(null);
   const lastReload = useRef(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const [antiSleep, setAntiSleep] = useState(false);
+  const antiSleepRef = useRef(false);
+  const streakRef = useRef(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const answerRef = useRef<(correct: boolean) => void>(() => {});
   const backRef = useRef<() => boolean>(() => false);
 
   function remember(result: Awaited<ReturnType<typeof loadLibrary>>) {
@@ -691,12 +737,77 @@ export function LibraryApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Chế độ Chống buồn ngủ: nhớ lựa chọn, phát nhạc khi sai hoặc đúng liên tiếp.
+  useEffect(() => {
+    try {
+      const on = localStorage.getItem(ANTI_SLEEP_KEY) === "1";
+      antiSleepRef.current = on;
+      setAntiSleep(on);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  function getAlarm(): HTMLAudioElement {
+    if (!audioRef.current) {
+      const audio = new Audio(ANTI_SLEEP_SRC);
+      audio.preload = "auto";
+      audioRef.current = audio;
+    }
+    return audioRef.current;
+  }
+
+  function changeAntiSleep(next: boolean) {
+    antiSleepRef.current = next;
+    streakRef.current = 0;
+    setAntiSleep(next);
+    try {
+      localStorage.setItem(ANTI_SLEEP_KEY, next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+    const audio = getAlarm();
+    if (!next) {
+      audio.pause();
+      return;
+    }
+    // Bấm công tắc là thao tác của người dùng → "mở khóa" phát âm thanh (nhất là trên iPhone).
+    audio.muted = true;
+    audio
+      .play()
+      .then(() => {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.muted = false;
+      })
+      .catch(() => {
+        audio.muted = false;
+      });
+  }
+
+  answerRef.current = (correct: boolean) => {
+    if (!antiSleepRef.current) return;
+    if (correct) {
+      streakRef.current += 1;
+      if (streakRef.current < ANTI_SLEEP_STREAK) return;
+    }
+    streakRef.current = 0;
+    const audio = getAlarm();
+    audio.currentTime = 0;
+    void audio.play().catch(() => {});
+  };
+
   // Nhận điểm do đề HTML gửi về và lưu lại.
   const practiceId = viewer?.kind === "practice" ? viewer.id : null;
   useEffect(() => {
     if (!practiceId) return;
     function onMessage(event: MessageEvent) {
       if (event.source !== frameRef.current?.contentWindow) return;
+      const data = event.data as { source?: unknown; type?: unknown; correct?: unknown } | null;
+      if (data && typeof data === "object" && data.source === "library-quiz" && data.type === "answer") {
+        answerRef.current(data.correct === true);
+        return;
+      }
       const result = parseQuizMessage(event.data);
       if (!result) return;
       void saveQuizResult({ data: { documentId: practiceId as string, score: result.score, total: result.total } })
@@ -714,7 +825,11 @@ export function LibraryApp() {
         .catch(() => setNotice("Không lưu được kết quả. Thử làm lại."));
     }
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      streakRef.current = 0;
+      audioRef.current?.pause();
+    };
   }, [practiceId]);
 
   const hits: SearchHit[] = [];
@@ -1001,6 +1116,14 @@ export function LibraryApp() {
               Quay lại
             </button>
             <h1 className="mb-3 text-2xl font-semibold break-words">{viewer.name}</h1>
+            <div className="mb-3 rounded-2xl border border-line bg-surface px-4">
+              <Switch
+                checked={antiSleep}
+                onChange={changeAntiSleep}
+                label="Chống buồn ngủ"
+                hint={`Chọn sai hoặc đúng liên tiếp ${ANTI_SLEEP_STREAK} câu sẽ phát nhạc.`}
+              />
+            </div>
             <iframe
               ref={frameRef}
               title={viewer.name}
