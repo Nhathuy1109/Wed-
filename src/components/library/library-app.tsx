@@ -1123,6 +1123,7 @@ export function LibraryApp() {
                 label="Chống buồn ngủ"
                 hint={`Chọn sai hoặc đúng liên tiếp ${ANTI_SLEEP_STREAK} câu sẽ phát nhạc.`}
               />
+              <p className="pb-3 text-xs text-muted">🎧 Nên đeo tai nghe khi sử dụng nơi đông người và giảm âm lượng.</p>
             </div>
             <iframe
               ref={frameRef}
