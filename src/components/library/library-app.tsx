@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   ArrowLeft,
+  Bell,
   BookOpen,
   ChevronRight,
   ClipboardCheck,
@@ -19,6 +20,9 @@ import {
   History,
   Sparkles,
   LogOut,
+  Maximize,
+  Maximize2,
+  Minimize2,
   Pencil,
   Plus,
   Search,
@@ -156,6 +160,7 @@ const RECENT_KEY = "library-recent-searches";
 const SORT_KEY = "library-sort";
 const SEEN_PREFIX = "library-seen-docs:";
 const ANTI_SLEEP_KEY = "library-anti-sleep";
+const QUIZ_FULL_KEY = "library-quiz-full";
 const ANTI_SLEEP_GAIN_KEY = "library-anti-sleep-gain";
 const ANTI_SLEEP_GAINS = [1, 2, 3] as const;
 /** Đặt file nhạc vào public/sounds/chong-buon-ngu.mp3 (hoặc đổi đường dẫn ở đây). */
@@ -383,6 +388,11 @@ export function LibraryApp() {
   const antiSleepRef = useRef(false);
   const streakRef = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [quizFull, setQuizFull] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [canNativeFs, setCanNativeFs] = useState(false);
+  const [nativeFs, setNativeFs] = useState(false);
+  const sectionRef = useRef<HTMLElement>(null);
   const [boost, setBoost] = useState<number>(1);
   const boostRef = useRef(1);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -758,6 +768,77 @@ export function LibraryApp() {
       /* ignore */
     }
   }, []);
+
+  // Làm bài toàn màn hình: nhớ lựa chọn, khóa cuộn trang nền, hỗ trợ toàn màn hình thật nếu trình duyệt cho phép.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(QUIZ_FULL_KEY) === "0") setQuizFull(false);
+    } catch {
+      /* ignore */
+    }
+    setCanNativeFs(Boolean(document.fullscreenEnabled));
+    const onChange = () => setNativeFs(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  const quizFullActive = quizFull && viewer?.kind === "practice";
+  useEffect(() => {
+    if (!quizFullActive) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    };
+  }, [quizFullActive]);
+
+  function changeQuizFull(next: boolean) {
+    setQuizFull(next);
+    setSettingsOpen(false);
+    try {
+      localStorage.setItem(QUIZ_FULL_KEY, next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+    if (!next && document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+  }
+
+  function toggleNativeFs() {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+      return;
+    }
+    void sectionRef.current?.requestFullscreen?.().catch(() => {});
+  }
+
+  function renderAntiSleepPanel() {
+    return (
+      <>
+        <Switch
+          checked={antiSleep}
+          onChange={changeAntiSleep}
+          label="Chống buồn ngủ"
+          hint={`Chọn sai hoặc đúng liên tiếp ${ANTI_SLEEP_STREAK} câu sẽ phát nhạc.`}
+        />
+        <div className="flex items-center gap-2 pb-2">
+          <span className="text-sm font-semibold">Âm lượng</span>
+          {ANTI_SLEEP_GAINS.map((g) => (
+            <button
+              key={g}
+              type="button"
+              aria-pressed={boost === g}
+              onClick={() => changeBoost(g)}
+              className={`h-9 min-w-12 rounded-full border px-3 text-sm font-semibold ${boost === g ? "border-accent bg-accent text-white" : "border-line"}`}
+            >
+              ×{g}
+            </button>
+          ))}
+        </div>
+        <p className="pb-3 text-xs text-muted">🎧 Nên đeo tai nghe khi sử dụng nơi đông người và giảm âm lượng.</p>
+      </>
+    );
+  }
 
   function getAlarm(): HTMLAudioElement {
     if (!audioRef.current) {
@@ -1159,44 +1240,68 @@ export function LibraryApp() {
           <InfoPanel onBack={goBack} setNotice={setNotice} />
         ) : null}
         {!loading && !error && !searching && !panel && viewer?.kind === "practice" ? (
-          <section>
-            <button type="button" className="mb-3 inline-flex h-11 items-center gap-1 text-sm font-semibold text-accent-2" onClick={goBack}>
-              <ArrowLeft aria-hidden="true" className="size-4" />
-              Quay lại
-            </button>
-            <h1 className="mb-3 text-2xl font-semibold break-words">{viewer.name}</h1>
-            <div className="mb-3 rounded-2xl border border-line bg-surface px-4">
-              <Switch
-                checked={antiSleep}
-                onChange={changeAntiSleep}
-                label="Chống buồn ngủ"
-                hint={`Chọn sai hoặc đúng liên tiếp ${ANTI_SLEEP_STREAK} câu sẽ phát nhạc.`}
-              />
-              <div className="flex items-center gap-2 pb-2">
-                <span className="text-sm font-semibold">Âm lượng</span>
-                {ANTI_SLEEP_GAINS.map((g) => (
-                  <button
-                    key={g}
-                    type="button"
-                    aria-pressed={boost === g}
-                    onClick={() => changeBoost(g)}
-                    className={`h-9 min-w-12 rounded-full border px-3 text-sm font-semibold ${boost === g ? "border-accent bg-accent text-white" : "border-line"}`}
-                  >
-                    ×{g}
-                  </button>
-                ))}
-              </div>
-              <p className="pb-3 text-xs text-muted">🎧 Nên đeo tai nghe khi sử dụng nơi đông người và giảm âm lượng.</p>
+          <section
+            ref={sectionRef}
+            className={quizFull ? "fixed inset-0 z-50 flex flex-col bg-surface" : ""}
+            style={quizFull ? { paddingBottom: "env(safe-area-inset-bottom, 0px)" } : undefined}
+          >
+            <div
+              className={quizFull ? "flex shrink-0 items-center gap-1 border-b border-line px-3 pb-1" : "mb-3 flex items-center gap-1"}
+              style={quizFull ? { paddingTop: "calc(env(safe-area-inset-top, 0px) + 0.25rem)" } : undefined}
+            >
+              <button type="button" className="inline-flex h-11 shrink-0 items-center gap-1 text-sm font-semibold text-accent-2" onClick={goBack}>
+                <ArrowLeft aria-hidden="true" className="size-4" />
+                Quay lại
+              </button>
+              <span className="min-w-0 flex-1 truncate px-1 text-sm font-semibold">{quizFull ? viewer.name : null}</span>
+              {quizFull ? (
+                <button
+                  type="button"
+                  aria-label="Chống buồn ngủ"
+                  aria-expanded={settingsOpen}
+                  onClick={() => setSettingsOpen((open) => !open)}
+                  className={`inline-flex h-11 shrink-0 items-center gap-1 rounded-full px-3 text-sm font-semibold ${antiSleep ? "bg-accent text-white" : "border border-line"}`}
+                >
+                  <Bell aria-hidden="true" className="size-4" />
+                  {antiSleep ? "Bật" : "Tắt"}
+                </button>
+              ) : null}
+              {quizFull && canNativeFs ? (
+                <button type="button" aria-label={nativeFs ? "Thoát toàn màn hình" : "Toàn màn hình thật"} onClick={toggleNativeFs} className="inline-flex size-11 shrink-0 items-center justify-center">
+                  <Maximize aria-hidden="true" className="size-5" />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => changeQuizFull(!quizFull)}
+                className="inline-flex h-11 shrink-0 items-center gap-1 text-sm font-semibold text-accent-2"
+              >
+                {quizFull ? <Minimize2 aria-hidden="true" className="size-4" /> : <Maximize2 aria-hidden="true" className="size-4" />}
+                {quizFull ? "Thu nhỏ" : "Toàn màn hình"}
+              </button>
             </div>
+            {quizFull ? null : <h1 className="mb-3 text-2xl font-semibold break-words">{viewer.name}</h1>}
+            {quizFull ? (
+              settingsOpen ? (
+                <div className="max-h-[45vh] shrink-0 overflow-y-auto border-b border-line bg-surface px-4">{renderAntiSleepPanel()}</div>
+              ) : null
+            ) : (
+              <div className="mb-3 rounded-2xl border border-line bg-surface px-4">{renderAntiSleepPanel()}</div>
+            )}
+            {quizFull && quizResult ? (
+              <div className="shrink-0 px-3 pb-2">
+                <QuizResultCard result={quizResult} owner={Boolean(owner)} best={bests[viewer.id]} />
+              </div>
+            ) : null}
             <iframe
               ref={frameRef}
               title={viewer.name}
               sandbox="allow-scripts allow-forms allow-modals"
               srcDoc={withQuizBridge(viewer.html)}
-              className="h-[70vh] w-full rounded-2xl border border-line bg-white"
+              className={quizFull ? "min-h-0 w-full flex-1 bg-white" : "h-[70vh] w-full rounded-2xl border border-line bg-white"}
             />
-            <QuizResultCard result={quizResult} owner={Boolean(owner)} best={bests[viewer.id]} />
-            <PracticeComments documentId={viewer.id} nickname={me?.nickname ?? ""} viewerIsOwner={Boolean(owner)} />
+            {quizFull ? null : <QuizResultCard result={quizResult} owner={Boolean(owner)} best={bests[viewer.id]} />}
+            {quizFull ? null : <PracticeComments documentId={viewer.id} nickname={me?.nickname ?? ""} viewerIsOwner={Boolean(owner)} />}
           </section>
         ) : null}
         {!loading && !error && !searching && !panel && viewer?.kind === "file" ? (
