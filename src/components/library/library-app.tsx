@@ -78,6 +78,7 @@ import {
   readDocument,
   readSubmission,
   resetUserPassword,
+  revealUserPassword,
   reviewSubmission,
   saveQuizResult,
   setAnonymous,
@@ -2731,6 +2732,7 @@ function PeoplePanel({
   const [username, setUsername] = useState("");
   const [resetFor, setResetFor] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [shown, setShown] = useState<Record<string, string>>({});
   useEffect(() => {
     let alive = true;
     listPeople()
@@ -2805,6 +2807,23 @@ function PeoplePanel({
                   <p className="mt-1 text-sm font-semibold text-accent">Đã yêu cầu đặt lại mật khẩu</p>
                 ) : null}
               </div>
+              {person.registered && person.role !== "owner" ? (
+                <button
+                  type="button"
+                  className="h-10 rounded-full border border-line px-4 text-sm font-semibold"
+                  onClick={() =>
+                    void run(async () => {
+                      const r = await revealUserPassword({ data: { username: person.username } });
+                      setShown((m) => ({ ...m, [person.username]: r.ok ? `Mật khẩu: ${r.data}` : r.message }));
+                    })
+                  }
+                >
+                  Xem mật khẩu
+                </button>
+              ) : null}
+              {shown[person.username] ? (
+                <p className="w-full select-all break-all rounded-xl bg-bg px-3 py-2 text-sm font-semibold">{shown[person.username]}</p>
+              ) : null}
               {person.resetRequested && resetFor === person.username ? (
                 <form
                   className="flex w-full flex-col gap-2 sm:flex-row"
