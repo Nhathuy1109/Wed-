@@ -43,6 +43,7 @@ import { SpiritSection } from "@/components/spirit-garden";
 import { PixelLoadingScreen, PixelWorld } from "@/components/pixel-world";
 import { WordQuizTab } from "@/components/library/word-quiz-tab";
 import { StudyRoom } from "@/components/library/study-room";
+import { roomPoll } from "@/lib/library/room-api";
 import { StudyHub } from "@/components/library/study-hub";
 import { OfficePreview, officeKind } from "@/components/library/office-preview";
 import {
@@ -368,6 +369,19 @@ export function LibraryApp() {
   const [tab, setTab] = useState<TabId>(() =>
     typeof window !== "undefined" && new URLSearchParams(window.location.search).has("room") ? "room" : "home",
   );
+  const [openRoom, setOpenRoom] = useState<string | null>(null);
+  const [joinCode, setJoinCode] = useState("");
+  useEffect(() => {
+    if (!me || me.role === "owner" || tab === "room") return;
+    let live = true;
+    const poll = () =>
+      roomPoll({ data: { code: "" } })
+        .then((r) => { if (live && r.ok) setOpenRoom(r.open); })
+        .catch(() => {});
+    poll();
+    const t = setInterval(poll, 4000);
+    return () => { live = false; clearInterval(t); };
+  }, [me, tab]);
   const [practiceView, setPracticeView] = useState<"quizzes" | "rank">("quizzes");
   const [studyPane, setStudyPane] = useState<"assistant" | "history">("assistant");
   const [rankVersion, setRankVersion] = useState(0);
@@ -1481,7 +1495,14 @@ export function LibraryApp() {
             }
           />
         ) : null}
-        {idle && tab === "room" && me ? <StudyRoom username={me.username} owner={Boolean(owner)} /> : null}
+        {idle && me && !owner && openRoom && tab !== "room" ? (
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-accent bg-surface p-3 text-sm">
+            <span>📣 Chủ web vừa mở phòng ôn bài chung</span>
+            <button type="button" className="h-10 shrink-0 animate-pulse rounded-full bg-accent px-4 font-semibold text-on-accent"
+              onClick={() => { setJoinCode(openRoom); setTab("room"); }}>Tham gia</button>
+          </div>
+        ) : null}
+        {idle && tab === "room" && me ? <StudyRoom username={me.username} owner={Boolean(owner)} autoJoin={joinCode} /> : null}
         {idle && tab === "wordquiz" && me ? (
           <WordQuizTab
             username={me.username}

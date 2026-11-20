@@ -6,7 +6,7 @@ import { answerRoom, closeRoom, createRoom, joinRoom, roomPoll, startRoom, type 
 const btn = "inline-flex h-11 items-center justify-center rounded-full bg-accent px-5 text-sm font-semibold text-on-accent disabled:opacity-50";
 const card = "rounded-2xl border border-line bg-surface p-4";
 
-export function StudyRoom({ username, owner }: { username: string; owner: boolean }) {
+export function StudyRoom({ username, owner, autoJoin }: { username: string; owner: boolean; autoJoin?: string }) {
   const [code, setCode] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [st, setSt] = useState<RoomState | null>(null);
@@ -29,7 +29,8 @@ export function StudyRoom({ username, owner }: { username: string; owner: boolea
   // Vào bằng link ?room=MÃ
   useEffect(() => {
     const c = new URLSearchParams(window.location.search).get("room");
-    if (c && !owner) joinRoom({ data: { code: c } }).then(apply);
+    const j = autoJoin || c;
+    if (j && !owner) joinRoom({ data: { code: j } }).then(apply).catch(() => setErr("Không vào được phòng."));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hỏi server ~1 giây/lần (không cần WebSocket)
@@ -103,10 +104,6 @@ export function StudyRoom({ username, owner }: { username: string; owner: boolea
           <button type="button" disabled={!open} className={`${btn} mt-3 ${open ? "animate-pulse" : ""}`} onClick={async () => open && apply(await joinRoom({ data: { code: open } }))}>
             {open ? "Tham gia" : "Chưa có phòng đang mở"}
           </button>
-          <div className="mt-3 flex gap-2">
-            <input value={code} onChange={(e) => setCode(e.target.value.trim())} placeholder="Hoặc nhập mã phòng" inputMode="numeric" className="h-11 flex-1 rounded-xl border border-line bg-surface px-3 text-sm" />
-            <button type="button" className={btn} onClick={async () => apply(await joinRoom({ data: { code } }))}>Vào</button>
-          </div>
         </div>
         {err ? <p className="text-sm text-red-600">{err}</p> : null}
       </section>
@@ -146,8 +143,11 @@ export function StudyRoom({ username, owner }: { username: string; owner: boolea
               const reveal = st.status === "reveal";
               const cls = reveal ? (i === st.correct ? "border-green-600 bg-green-100 text-green-900" : i === st.pick ? "border-red-500 bg-red-100 text-red-900" : "border-line") : i === st.pick ? "border-accent bg-bg" : "border-line";
               return (
-                <button key={i} type="button" disabled={reveal || st.answered || st.isOwner || left <= 0} className={`w-full rounded-xl border-2 px-3 py-3 text-left text-sm ${cls}`}
-                  onClick={async () => apply(await answerRoom({ data: { code: st.code, pick: i } }))}>
+                <button key={i} type="button" disabled={reveal || st.answered || st.isOwner || left <= 0} className={`w-full touch-manipulation rounded-xl border-2 px-3 py-3 text-left text-sm ${cls}`}
+                  onClick={async () => {
+                    setSt({ ...st, answered: true, pick: i });
+                    try { apply(await answerRoom({ data: { code: st.code, pick: i } })); } catch { setErr("Không gửi được đáp án, thử lại."); }
+                  }}>
                   <b>{"ABCD"[i]}.</b> {t}
                 </button>
               );
