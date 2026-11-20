@@ -166,8 +166,8 @@ export const answerRoom = createServerFn({ method: "POST" })
       const pts = ok ? Math.round(500 + 500 * frac) : 0;
       const ins = await sql<{ idx: number }>`
         insert into room_answers (code, idx, user_id, pick, pts)
-        select ${data.code}, ${room.idx}, ${context.userId}, ${data.pick}, ${pts}
-        where exists (select 1 from room_players where code=${data.code} and user_id=${context.userId})
+        select ${data.code}::text, ${room.idx}::int, ${context.userId}::text, ${data.pick}::int, ${pts}::int
+        where exists (select 1 from room_players where code=${data.code}::text and user_id=${context.userId}::text)
         on conflict do nothing returning idx`;
       if (ins[0]) await sql`update room_players set score=score+${pts} where code=${data.code} and user_id=${context.userId}`;
     }
