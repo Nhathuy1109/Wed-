@@ -7,7 +7,7 @@ import {
   FileImage,
   FileSpreadsheet,
   FileText,
-  FilePenLine,
+  FilePenLine, Users,
   House,
   Monitor,
   Moon,
@@ -23,13 +23,14 @@ import { setThemePref, useThemePref, type ThemePref } from "@/lib/theme";
 
 /* ---------- Thanh điều hướng dưới ---------- */
 
-export type TabId = "home" | "subjects" | "practice" | "wordquiz" | "study" | "me";
+export type TabId = "home" | "subjects" | "practice" | "wordquiz" | "room" | "study" | "me";
 
 const TABS: { id: TabId; label: string; icon: LucideIcon }[] = [
   { id: "home", label: "Trang chủ", icon: House },
   { id: "subjects", label: "Môn", icon: BookOpen },
   { id: "practice", label: "Ôn tập", icon: ClipboardList },
   { id: "wordquiz", label: "Word→TN", icon: FilePenLine },
+  { id: "room", label: "Ôn chung", icon: Users },
   { id: "study", label: "Học tập", icon: Sparkles },
   { id: "me", label: "Tôi", icon: PawPrint },
 ];

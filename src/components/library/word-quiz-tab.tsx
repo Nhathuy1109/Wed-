@@ -456,13 +456,28 @@ export function WordQuizTab({ username, owner, subjects, busy, onSubmitToOwner }
       <div className="rounded-2xl border border-line bg-surface p-3 text-sm">
         <p className="font-semibold">File Word mẫu</p>
         <p className="mt-1 text-xs text-muted">Tải mẫu .docx, thay nội dung câu hỏi và đáp án rồi tải lên. Có thể thêm hoặc xóa câu tùy ý.</p>
-        <a
-          href={`${import.meta.env.BASE_URL}templates/mau-trac-nghiem.docx`}
-          download="Mau-soan-trac-nghiem.docx"
-          className="mt-3 inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-semibold text-on-accent"
-        >
-          Tải file Word mẫu (.docx)
-        </a>
+        <div className="mt-3 flex flex-col gap-3">
+          <div>
+            <a
+              href={`${import.meta.env.BASE_URL}templates/mau-trac-nghiem.docx`}
+              download="Mau-soan-trac-nghiem.docx"
+              className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-semibold text-on-accent"
+            >
+              Mẫu 1: đáp án ghi dưới câu (.docx)
+            </a>
+            <p className="mt-1 text-xs text-muted">Dòng “Đáp án: B” và “Giải thích: …” ngay dưới mỗi câu, hoặc tô vàng/in đậm đáp án đúng.</p>
+          </div>
+          <div>
+            <a
+              href={`${import.meta.env.BASE_URL}templates/mau-trac-nghiem-2.docx`}
+              download="Mau-trac-nghiem-2-dap-an-trong-khung.docx"
+              className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-semibold text-on-accent"
+            >
+              Mẫu 2: đáp án trong khung (.docx)
+            </a>
+            <p className="mt-1 text-xs text-muted">Đề ôn 30 câu (Marketing chương 1 &amp; 2.1): “Câu N: …”, 4 lựa chọn A–D, rồi khung “Đáp án đúng: X” kèm giải thích lý thuyết.</p>
+          </div>
+        </div>
       </div>
 
       <details className="rounded-2xl border border-line bg-surface p-3 text-sm">
@@ -476,7 +491,13 @@ D. Huế
 Giải thích: Hà Nội là thủ đô từ năm 1945.
 
 Câu 2. ...
-(A tô vàng hoặc in đậm cũng được, không cần dòng Đáp án)`}</pre>
+(A tô vàng hoặc in đậm cũng được, không cần dòng Đáp án)
+
+Kiểu khung (Mẫu 2) cũng đọc được:
+Câu 1: Nội dung câu hỏi?
+A. ...  B. ...  C. ...  D. ...
+[Khung] Đáp án đúng: A
+        Giải thích lý thuyết: ...`}</pre>
       </details>
     </section>
   );

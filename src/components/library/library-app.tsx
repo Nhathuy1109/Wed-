@@ -42,6 +42,7 @@ import { LeaderboardList } from "@/components/library/leaderboard";
 import { SpiritSection } from "@/components/spirit-garden";
 import { PixelLoadingScreen, PixelWorld } from "@/components/pixel-world";
 import { WordQuizTab } from "@/components/library/word-quiz-tab";
+import { StudyRoom } from "@/components/library/study-room";
 import { StudyHub } from "@/components/library/study-hub";
 import { OfficePreview, officeKind } from "@/components/library/office-preview";
 import {
@@ -364,7 +365,9 @@ export function LibraryApp() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<TabId>("home");
+  const [tab, setTab] = useState<TabId>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).has("room") ? "room" : "home",
+  );
   const [practiceView, setPracticeView] = useState<"quizzes" | "rank">("quizzes");
   const [studyPane, setStudyPane] = useState<"assistant" | "history">("assistant");
   const [rankVersion, setRankVersion] = useState(0);
@@ -1478,6 +1481,7 @@ export function LibraryApp() {
             }
           />
         ) : null}
+        {idle && tab === "room" && me ? <StudyRoom username={me.username} owner={Boolean(owner)} /> : null}
         {idle && tab === "wordquiz" && me ? (
           <WordQuizTab
             username={me.username}
