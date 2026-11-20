@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Eye, EyeOff } from "lucide-react";
-import { registerMember } from "@/lib/library/api";
+import { registerMember, requestPasswordReset } from "@/lib/library/api";
 import { signInWithUsername } from "@/lib/library/client-auth";
 import { OWNER_USERNAME, FRESH_VISIT_KEY, NOTICE_CACHE_KEY } from "@/lib/library/ids";
 
@@ -142,7 +142,7 @@ export function AuthScreen() {
               ? "Mật khẩu được kiểm tra trên máy chủ. Sau lần vào đầu tiên, hãy đặt mật khẩu mới."
               : "Tài khoản lưu trên máy chủ, nên đổi điện thoại hay trình duyệt vẫn đăng nhập được."}
           </p>
-          <form key={owner ? "owner" : mode} onSubmit={onSubmit} className="space-y-3">
+          <form id="auth-form" key={owner ? "owner" : mode} onSubmit={onSubmit} className="space-y-3">
             {register ? (
               <label className="block text-sm font-medium">
                 Họ và tên
@@ -185,6 +185,34 @@ export function AuthScreen() {
               {pending ? "Đang xử lý…" : register ? "Đăng ký" : "Đăng nhập"}
             </button>
           </form>
+          {!owner && !register ? (
+            <p className="mt-4 text-center text-sm text-muted">
+              <button
+                type="button"
+                disabled={pending}
+                className="font-semibold text-accent-2 underline"
+                onClick={async () => {
+                  const f = document.getElementById("auth-form") as HTMLFormElement | null;
+                  const name = String((f ? new FormData(f).get("username") : "") ?? "").trim();
+                  if (!name) {
+                    setMessage("Nhập tên đăng nhập ở trên rồi bấm Quên mật khẩu.");
+                    return;
+                  }
+                  setPending(true);
+                  try {
+                    const r = await requestPasswordReset({ data: { username: name } });
+                    setMessage(r.ok ? "Đã gửi yêu cầu đặt lại mật khẩu cho chủ web. Hãy liên hệ chủ web để nhận mật khẩu mới." : r.message);
+                  } catch {
+                    setMessage("Không kết nối được. Thử lại.");
+                  } finally {
+                    setPending(false);
+                  }
+                }}
+              >
+                Quên mật khẩu?
+              </button>
+            </p>
+          ) : null}
           {!owner ? (
             <p className="mt-4 text-center text-sm text-muted">
               {register ? "Đã có tài khoản?" : "Chưa có tài khoản?"}{" "}
